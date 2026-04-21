@@ -25,6 +25,10 @@ pub fn get_assets(release: Release) -> Vec<AssetWarper> {
 }
 
 pub fn extract_asset(file_path: &str, output_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    info!(
+        "Extrcting file path: {}, output dir: {}",
+        file_path, output_dir
+    );
     let path = Path::new(file_path);
     let output_path = Path::new(output_dir);
 
@@ -33,13 +37,17 @@ pub fn extract_asset(file_path: &str, output_dir: &str) -> Result<(), Box<dyn st
     }
     match path.extension().and_then(|s| s.to_str()) {
         Some("7z") => {
-            info!("Extracting 7z archive...");
+            println!("Extracting 7z archive...");
             sevenz_rust::decompress_file(file_path, output_dir)?;
         }
         Some("zip") => {
-            info!("Extracting ZIP archive...");
             let file = File::open(file_path)?;
             let mut archive = zip::ZipArchive::new(file)?;
+            let pb = indicatif::ProgressBar::new(archive.len() as u64);
+            pb.set_style(indicatif::ProgressStyle::default_bar()
+        .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
+        .progress_chars("#>-"));
+            pb.set_message(format!("Extrcting zip {}", output_dir));
 
             for i in 0..archive.len() {
                 let mut file = archive.by_index(i)?;
@@ -60,12 +68,13 @@ pub fn extract_asset(file_path: &str, output_dir: &str) -> Result<(), Box<dyn st
                     let mut outfile = File::create(&outpath)?;
                     std::io::copy(&mut file, &mut outfile)?;
                 }
+                pb.inc(1);
             }
+            pb.finish_with_message("Extrction completed successfully");
         }
         _ => return Err("Unsupported file extension. Use .7z or .zip".into()),
     }
 
-    info!("Extraction complete!");
     Ok(())
 }
 
@@ -75,11 +84,23 @@ pub async fn download_asset(
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting download from URL: {}", url);
     let client = reqwest::Client::new();
+
     let response = client
         .get(url)
         .header("User-Agent", "llc-updater")
         .send()
         .await?;
+
+    let content_size = response.content_length().ok_or_else(|| {
+        error!("Failed to get content length from GitHub");
+        panic!();
+    })?;
+
+    let pb = indicatif::ProgressBar::new(content_size);
+    pb.set_style(indicatif::ProgressStyle::default_bar()
+        .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
+        .progress_chars("#>-"));
+    pb.set_message(format!("Downloading {}", target_path));
 
     let mut file = std::fs::File::create(target_path)?;
     let mut stream = response.bytes_stream();
@@ -87,8 +108,9 @@ pub async fn download_asset(
     while let Some(item) = futures_util::StreamExt::next(&mut stream).await {
         let chunk = item?;
         std::io::Write::write_all(&mut file, &chunk)?;
+        pb.inc(chunk.len() as u64);
     }
-    info!("Download completed successfully");
+    pb.finish_with_message("Download completed successfully");
     Ok(())
 }
 

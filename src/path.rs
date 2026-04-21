@@ -25,7 +25,7 @@ pub fn get_cache_path() -> PathBuf {
 
     match base {
         Some(mut path) => {
-            path.push("llc-updater/cache");
+            path.push("llc/cache");
             info!("Cache path: {}", path.display());
             path
         }

@@ -1,5 +1,5 @@
 [package]
-name = "llc_update"
+name = "llc"
 version = "0.1.0"
 edition = "2024"
 
@@ -19,3 +19,4 @@ futures-util = "0.3.32"
 rustls = { version = "0.23", features = ["ring"] }
 sevenz-rust = "0.6"
 zip = "8.5"
+indicatif = "0.18.4"

@@ -3,8 +3,9 @@ mod lang;
 mod llc;
 mod path;
 mod steam;
+use inquire::InquireError;
 use log::{debug, error, info, warn};
-use std::{path::Path, time::Duration};
+use std::{path::Path, process::exit, time::Duration};
 
 #[macro_export]
 macro_rules! env_dbg_init {
@@ -19,7 +20,7 @@ macro_rules! env_dbg_init {
 
 fn init() {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Off)
         .parse_default_env()
         .init();
     info!("logger initialized");
@@ -39,13 +40,22 @@ async fn main() {
     let release = llc::get_release(url).await.unwrap();
 
     let assets = llc::get_assets(release);
-    let asset = inquire::Select::new("Select a asset to download:", assets)
+    let asset = inquire::Select::new("Select an asset to download:", assets)
         .prompt()
-        .map_err(|e| {
-            error!("Error selecting asset: {}", e);
-            e
-        })
-        .unwrap();
+        .unwrap_or_else(|match_err| match match_err {
+            InquireError::OperationCanceled => {
+                println!("\nSelection canceled by user.");
+                exit(0);
+            }
+            InquireError::OperationInterrupted => {
+                println!("\nProcess interrupted (Ctrl+C). Cleaning up...");
+                exit(0);
+            }
+            _ => {
+                eprintln!("\nAn error occurred: {}", match_err);
+                exit(1);
+            }
+        });
 
     let download_url = asset.0.browser_download_url.as_ref();
 
@@ -56,12 +66,14 @@ async fn main() {
     llc::download_asset(download_url, target_path.as_str())
         .await
         .unwrap_or_else(|e| {
-            error!("Error downloading asset: {}", e);
+            println!("Error downloading asset: {}", e);
             panic!();
         });
 
     llc::extract_asset(target_path.as_str(), "./test/").unwrap_or_else(|e| {
-        error!("Error extracting asset: {}", e);
+        println!("Error extracting asset: {}", e);
         panic!();
     });
+
+    let cache_path = path::get_cache_path();
 }
