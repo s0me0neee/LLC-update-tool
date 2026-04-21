@@ -19,3 +19,19 @@ pub fn get_steam_path() -> PathBuf {
         }
     }
 }
+
+pub fn get_cache_path() -> PathBuf {
+    let base = dirs::data_dir();
+
+    match base {
+        Some(mut path) => {
+            path.push("llc-updater/cache");
+            info!("Cache path: {}", path.display());
+            path
+        }
+        None => {
+            error!("Could not find cache directory");
+            panic!();
+        }
+    }
+}

@@ -1,69 +1,26 @@
-use std::{default, path::PathBuf};
+use std::path::PathBuf;
 
 use super::*;
 use keyvalues_parser::{Value, parse};
+use lang::LangConfig;
 use path::get_steam_path;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default)]
-struct App {
+pub struct App {
     id: String,
-    name: String,
+    pub(crate) name: String,
     acf_path: PathBuf,
-    install_dir: String,
+    pub(crate) install_dir: String,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct LangConfig {
-    lang: String,
-    #[serde(rename = "titleFont")]
-    title_font: String,
-    #[serde(rename = "contextFont")]
-    context_font: String,
-    #[serde(rename = "samplingPointSize")]
-    sampling_point_size: u32,
-    padding: u32,
-}
-
-fn get_game_info() {
-    const GAME_NAME: &str = "Limbus Company";
-    let apps = get_info();
-    let game = apps
-        .iter()
-        .find(|e| e.name == GAME_NAME)
-        .ok_or_else(|| {
-            error!("{GAME_NAME} can't be found or not installed");
-            panic!();
-        })
-        .unwrap();
-
-    let game_data_dir = PathBuf::from(game.install_dir.clone()).join("LimbusCompany_Data");
-    let lang_dir = game_data_dir.join("Lang");
-    let lang_config: LangConfig = match serde_json::from_str(
-        &std::fs::read_to_string(lang_dir.join("config.json")).unwrap_or_else(|e| {
-            error!("Failed to read json: {}", e);
-            panic!();
-        }),
-    ) {
-        Ok(config) => config,
-        Err(e) => {
-            error!("Failed to parse json: {}", e);
-            panic!();
-        }
-    };
-
-    info!("Current lang: {}", &lang_config.lang);
-
-    for entry in std::fs::read_dir(lang_dir).unwrap() {
-        let entry = entry.unwrap(); // Error handling for individual entries
-        let path = entry.path();
-        println!("Name: {}", path.display());
-    }
-}
-
-fn get_info() -> Vec<App> {
+pub fn get_info() -> Vec<App> {
     let steam_path = get_steam_path();
+    info!("Using steam path: {}", steam_path.display());
     let library_vdf_path = steam_path.join("steamapps/libraryfolders.vdf");
+    info!(
+        "Looking for libraryfolders.vdf at {}",
+        library_vdf_path.display()
+    );
     if !library_vdf_path.exists() {
         error!(
             "Could not find libraryfolders.vdf at {}",
@@ -104,10 +61,10 @@ fn get_info() -> Vec<App> {
     apps
 }
 
-fn get_app_info(ctx: String, app: &mut App) {
-    let acf = parse(&ctx)
+fn get_app_info(acf_ctx: String, app: &mut App) {
+    let acf = parse(&acf_ctx)
         .unwrap_or_else(|e| {
-            error!("Error reading {}", e);
+            error!("Error reading acf: {}", e);
             panic!();
         })
         .value
@@ -125,10 +82,9 @@ fn get_app_info(ctx: String, app: &mut App) {
         })
         .unwrap_or_else(|| {
             error!("Could not find installdir in ACF");
-            "".to_string()
+            panic!();
         });
 
-    info!("Install directory: {}", install_dir);
     app.name = install_dir.clone();
     app.install_dir = install_dir;
 }
@@ -160,13 +116,13 @@ fn parse_library_vdf(vdf_path: PathBuf) -> Vec<String> {
                     apps.push(app_id.to_string());
                 }
             }
-            _ => (),
+            _ => {
+                error!(
+                    "Unexpected format in libraryfolders.vdf for folder: {}",
+                    _folder_id
+                );
+            }
         }
     }
     apps
-}
-
-#[test]
-fn vdf() {
-    get_game_info();
 }
