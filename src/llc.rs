@@ -3,6 +3,7 @@ use log::info;
 use octocrab::models::repos::Release;
 use std::fs::File;
 use std::path::Path;
+use std::path::PathBuf;
 use url::Url;
 
 #[derive(Debug)]
@@ -24,36 +25,38 @@ pub fn get_assets(release: Release) -> Vec<AssetWarper> {
     assets
 }
 
-pub fn extract_asset(file_path: &str, output_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn extract_asset(
+    archive_path: &PathBuf,
+    output_dir: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!(
         "Extrcting file path: {}, output dir: {}",
-        file_path, output_dir
+        archive_path.display(),
+        output_dir.display()
     );
-    let path = Path::new(file_path);
-    let output_path = Path::new(output_dir);
 
-    if !output_path.exists() {
-        std::fs::create_dir_all(output_path)?;
+    if !output_dir.exists() {
+        std::fs::create_dir_all(&output_dir)?;
     }
-    match path.extension().and_then(|s| s.to_str()) {
+    match archive_path.extension().and_then(|s| s.to_str()) {
         Some("7z") => {
             println!("Extracting 7z archive...");
-            sevenz_rust::decompress_file(file_path, output_dir)?;
+            sevenz_rust::decompress_file(archive_path, output_dir)?;
         }
         Some("zip") => {
-            let file = File::open(file_path)?;
+            let file = File::open(archive_path)?;
             let mut archive = zip::ZipArchive::new(file)?;
             let pb = indicatif::ProgressBar::new(archive.len() as u64);
             pb.set_style(indicatif::ProgressStyle::default_bar()
         .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
         .progress_chars("#>-"));
-            pb.set_message(format!("Extrcting zip {}", output_dir));
+            pb.set_message(format!("Extrcting zip {}", output_dir.display()));
 
             for i in 0..archive.len() {
                 let mut file = archive.by_index(i)?;
 
                 let outpath = match file.enclosed_name() {
-                    Some(path) => output_path.join(path),
+                    Some(path) => output_dir.join(path),
                     None => continue, // Skip files with suspicious paths
                 };
 
@@ -80,7 +83,7 @@ pub fn extract_asset(file_path: &str, output_dir: &str) -> Result<(), Box<dyn st
 
 pub async fn download_asset(
     url: &str,
-    target_path: &str,
+    target_file: &PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting download from URL: {}", url);
     let client = reqwest::Client::new();
@@ -96,13 +99,15 @@ pub async fn download_asset(
         panic!();
     })?;
 
+    info!("Downloading to: {}", target_file.display());
+
     let pb = indicatif::ProgressBar::new(content_size);
     pb.set_style(indicatif::ProgressStyle::default_bar()
         .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
         .progress_chars("#>-"));
-    pb.set_message(format!("Downloading {}", target_path));
+    pb.set_message(format!("Downloading {}", target_file.display()));
 
-    let mut file = std::fs::File::create(target_path)?;
+    let mut file = std::fs::File::create(target_file)?;
     let mut stream = response.bytes_stream();
 
     while let Some(item) = futures_util::StreamExt::next(&mut stream).await {
