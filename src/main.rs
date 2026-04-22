@@ -146,6 +146,9 @@ async fn main() {
             panic!();
         });
 
+    // TODO:build a lock file from download, and check locked cache before downloading, to avoid
+    // unnecessary downloads and extractions
+
     fs::move_and_cleanup(&paths).unwrap_or_else(|e| {
         error!("Error during move and cleanup: {}", e);
         panic!();
