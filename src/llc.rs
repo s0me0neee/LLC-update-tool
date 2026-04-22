@@ -2,7 +2,6 @@ use log::error;
 use log::info;
 use octocrab::models::repos::Release;
 use std::fs::File;
-use std::path::Path;
 use std::path::PathBuf;
 use url::Url;
 
@@ -12,6 +11,16 @@ impl std::fmt::Display for AssetWarper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.name)
     }
+}
+
+pub async fn download_and_extract(
+    paths: &crate::Paths,
+    download_url: Url,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let download_path = paths.app_cache.join(&paths.archive);
+    download_asset(download_url, &download_path).await?;
+    extract_asset(&download_path, &paths.app_lang).await?;
+    Ok(())
 }
 
 pub fn get_assets(release: Release) -> Vec<AssetWarper> {
@@ -25,7 +34,7 @@ pub fn get_assets(release: Release) -> Vec<AssetWarper> {
     assets
 }
 
-pub fn extract_asset(
+async fn extract_asset(
     archive_path: &PathBuf,
     output_dir: &PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -36,7 +45,7 @@ pub fn extract_asset(
     );
 
     if !output_dir.exists() {
-        std::fs::create_dir_all(&output_dir)?;
+        std::fs::create_dir_all(output_dir)?;
     }
     match archive_path.extension().and_then(|s| s.to_str()) {
         Some("7z") => {
@@ -81,10 +90,7 @@ pub fn extract_asset(
     Ok(())
 }
 
-pub async fn download_asset(
-    url: &str,
-    target_file: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn download_asset(url: Url, target_file: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting download from URL: {}", url);
     let client = reqwest::Client::new();
 
@@ -133,7 +139,7 @@ pub async fn get_release(url: &str) -> Result<Release, Box<dyn std::error::Error
     Ok(latest)
 }
 
-pub fn parse_github(url_str: &str) -> Option<(String, String)> {
+fn parse_github(url_str: &str) -> Option<(String, String)> {
     let url = Url::parse(url_str).ok()?;
     if url.domain() != Some("github.com") {
         return None;

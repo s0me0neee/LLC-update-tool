@@ -1,54 +1,32 @@
+use log::{error, info};
 use serde::{Deserialize, Serialize};
-
 use std::path::PathBuf;
 
-use crate::steam;
-use log::{error, info};
-
 #[derive(Debug, Default, Deserialize, Serialize)]
-pub struct LangConfig {
-    pub(crate) lang: String,
+struct LangConfig {
+    lang: String,
     #[serde(rename = "titleFont")]
-    pub(crate) title_font: String,
+    title_font: String,
     #[serde(rename = "contextFont")]
-    pub(crate) context_font: String,
+    context_font: String,
     #[serde(rename = "samplingPointSize")]
-    pub(crate) sampling_point_size: u32,
+    sampling_point_size: u32,
     padding: u32,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Language {
     pub(crate) name: String,
-    pub(crate) url: Option<String>,
+    pub(crate) path: PathBuf,
 }
 
-pub fn get_lang_info() -> Vec<Language> {
-    const GAME_NAME: &str = "Limbus Company";
-    info!("Looking for game: {}", GAME_NAME);
-    let apps = steam::get_info();
-    let game = apps
-        .iter()
-        .find(|e| e.name == GAME_NAME)
-        .ok_or_else(|| {
-            error!("{GAME_NAME} can't be found or not installed");
-            panic!();
-        })
-        .unwrap();
-
-    let game_data_dir = PathBuf::from(game.install_dir.clone()).join("LimbusCompany_Data");
-    if !game_data_dir.exists() {
-        error!(
-            "Game data directory does not exist at {}",
-            game_data_dir.display()
-        );
-        panic!();
-    }
-    info!("Using game data directory: {}", game_data_dir.display());
-
-    let lang_dir = game_data_dir.join("Lang");
+fn get_lang_path(lbc_data_dir: PathBuf) -> PathBuf {
+    let lang_dir = lbc_data_dir.join("Lang");
     info!("Lang installed directory: {}", lang_dir.display());
+    lang_dir
+}
 
+pub fn get_current_lang(lang_dir: PathBuf) -> Language {
     let lang_config: LangConfig = match serde_json::from_str(
         &std::fs::read_to_string(lang_dir.join("config.json")).unwrap_or_else(|e| {
             error!("Failed to read json: {}", e);
@@ -61,14 +39,18 @@ pub fn get_lang_info() -> Vec<Language> {
             panic!();
         }
     };
+    let lang_name = &lang_config.lang;
 
-    info!("Current lang: {}", &lang_config.lang);
-    get_languages(lang_dir)
+    info!("Current lang: {}", lang_name);
+    Language {
+        name: lang_name.clone(),
+        path: lang_dir.join(lang_name),
+    }
 }
 
-fn get_languages(dir: PathBuf) -> Vec<Language> {
+pub fn get_languages(lang_dir: &PathBuf) -> Vec<Language> {
     let mut langs = Vec::new();
-    for entry in std::fs::read_dir(dir)
+    for entry in std::fs::read_dir(lang_dir)
         .unwrap_or_else(|e| {
             error!("Failed to read lang directory: {}", e);
             panic!();
@@ -82,18 +64,9 @@ fn get_languages(dir: PathBuf) -> Vec<Language> {
         .filter(|entry| entry.path().is_dir())
     {
         let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path();
         info!("Found language: {}", name);
-        langs.push(Language { name, url: None });
+        langs.push(Language { name, path });
     }
     langs
-}
-
-#[test]
-fn vdf() {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::max())
-        .parse_default_env()
-        .init();
-
-    dbg!(get_lang_info());
 }

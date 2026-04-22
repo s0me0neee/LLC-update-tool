@@ -2,18 +2,42 @@ use std::path::PathBuf;
 
 use super::*;
 use keyvalues_parser::{Value, parse};
-use lang::LangConfig;
 use path::get_steam_path;
 
 #[derive(Debug, Default)]
-pub struct App {
+struct Game {
     id: String,
-    pub(crate) name: String,
+    name: String,
     acf_path: PathBuf,
-    pub(crate) install_dir: String,
+    install_dir: String,
 }
 
-pub fn get_info() -> Vec<App> {
+pub fn get_lbc_data_dir() -> PathBuf {
+    const GAME_NAME: &str = "Limbus Company";
+    info!("Looking for game: {}", GAME_NAME);
+    let apps = steam::get_games();
+    let lbc = apps
+        .iter()
+        .find(|e| e.name == GAME_NAME)
+        .ok_or_else(|| {
+            error!("{GAME_NAME} can't be found or not installed");
+            panic!();
+        })
+        .unwrap();
+
+    let lbc_data_dir = PathBuf::from(lbc.install_dir.clone()).join("LimbusCompany_Data");
+    if !lbc_data_dir.exists() {
+        error!(
+            "Game data directory does not exist at {}",
+            lbc_data_dir.display()
+        );
+        panic!();
+    }
+    info!("Using game data directory: {}", lbc_data_dir.display());
+    lbc_data_dir
+}
+
+fn get_games() -> Vec<Game> {
     let steam_path = get_steam_path();
     info!("Using steam path: {}", steam_path.display());
     let library_vdf_path = steam_path.join("steamapps/libraryfolders.vdf");
@@ -29,10 +53,10 @@ pub fn get_info() -> Vec<App> {
         panic!();
     }
     let ids = parse_library_vdf(library_vdf_path);
-    let mut apps: Vec<App> = Vec::new();
+    let mut apps: Vec<Game> = Vec::new();
 
     for file_id in ids {
-        let mut app = App::default();
+        let mut app = Game::default();
         let acf_path = steam_path
             .join("steamapps")
             .join(format!("appmanifest_{}.acf", file_id));
@@ -40,7 +64,7 @@ pub fn get_info() -> Vec<App> {
         match std::fs::read_to_string(&acf_path) {
             Ok(acf_content) => {
                 app.id = file_id;
-                get_app_info(acf_content, &mut app);
+                get_game_info(acf_content, &mut app);
                 app.install_dir = steam_path
                     .join("steamapps/common")
                     .join(app.install_dir)
@@ -61,7 +85,7 @@ pub fn get_info() -> Vec<App> {
     apps
 }
 
-fn get_app_info(acf_ctx: String, app: &mut App) {
+fn get_game_info(acf_ctx: String, app: &mut Game) {
     let acf = parse(&acf_ctx)
         .unwrap_or_else(|e| {
             error!("Error reading acf: {}", e);

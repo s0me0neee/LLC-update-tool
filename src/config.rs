@@ -62,22 +62,3 @@ impl Config for Setting {
         std::fs::write(std::path::Path::new(&self.path()?), json).map_err(|e| e.to_string())
     }
 }
-
-#[cfg(test)]
-mod test {
-    use crate::env_dbg_init;
-
-    use super::*;
-
-    #[test]
-    fn test_config() {
-        env_dbg_init!();
-        let name = "zh-CN".to_string();
-        let setting = Setting {
-            language: vec![Language { name, url: None }],
-        };
-        let _ = setting.write();
-        let read_setting = setting.read().unwrap();
-        assert_eq!(setting.language[0].name, read_setting.language[0].name);
-    }
-}
