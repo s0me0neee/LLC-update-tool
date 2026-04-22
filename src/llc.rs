@@ -13,6 +13,32 @@ impl std::fmt::Display for AssetWarper {
     }
 }
 
+#[derive(Debug)]
+pub struct ReleaseWrapper(pub(crate) Release);
+impl std::fmt::Display for ReleaseWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tag = &self.0.tag_name;
+
+        let name_opt = self.0.name.as_deref().filter(|n| !n.is_empty());
+
+        let parsed_name = if let Some(name) = name_opt {
+            if name.len() >= 10 {
+                let year = &name[0..4];
+                let month = &name[4..6];
+                let day = &name[6..8];
+                let rev = &name[8..10];
+                format!("{}-{}-{} [#{}]", year, month, day, rev)
+            } else {
+                name.to_string()
+            }
+        } else {
+            "No Release Name".to_string()
+        };
+
+        write!(f, "Tag: {} - ({})", tag, parsed_name)
+    }
+}
+
 pub async fn download_and_extract(
     paths: &crate::Paths,
     download_url: Url,
@@ -125,18 +151,74 @@ async fn download_asset(url: Url, target_file: &PathBuf) -> Result<(), Box<dyn s
     Ok(())
 }
 
-pub async fn get_release(url: &str) -> Result<Release, Box<dyn std::error::Error>> {
-    let octo = octocrab::instance();
-    info!("Using GitHub URL: {}", url);
-    let (owner, repo) = parse_github(url)
-        .ok_or_else(|| {
-            error!("Failed to parse GitHub URL: {}", url);
-            panic!();
-        })
-        .unwrap();
+// pub async fn get_release(url: &str) -> Result<Release, Box<dyn std::error::Error>> {
+//     let octo = octocrab::instance();
+//     info!("Using GitHub URL: {}", url);
+//     let (owner, repo) = parse_github(url)
+//         .ok_or_else(|| {
+//             error!("Failed to parse GitHub URL: {}", url);
+//             panic!();
+//         })
+//         .unwrap();
+//
+//     let latest = octo.repos(owner, repo).releases().get_latest().await?;
+//     Ok(latest)
+// }
+//
 
-    let latest = octo.repos(owner, repo).releases().get_latest().await?;
-    Ok(latest)
+pub async fn get_releases(url: &str) -> Result<Vec<ReleaseWrapper>, Box<dyn std::error::Error>> {
+    let octo = octocrab::instance();
+    info!("Fetching releases from GitHub URL: {}", url);
+
+    let (owner, repo) = parse_github(url).ok_or_else(|| {
+        error!("Failed to parse GitHub URL: {}", url);
+        "Invalid GitHub URL format" // Returns as a Boxed error
+    })?;
+
+    let page = octo
+        .repos(owner, repo)
+        .releases()
+        .list()
+        .per_page(5)
+        .send()
+        .await?;
+
+    let releases = page
+        .items
+        .into_iter()
+        .map(ReleaseWrapper)
+        .collect::<Vec<_>>();
+
+    if releases.is_empty() {
+        return Err("No releases found for this repository.".into());
+    }
+
+    info!(
+        "Found {} releases. Defaulting to newest: {}",
+        releases.len(),
+        releases[0].0.tag_name
+    );
+
+    Ok(releases)
+}
+
+pub async fn select_release(url: &str) -> Result<Release, Box<dyn std::error::Error>> {
+    let releases = get_releases(url).await?;
+
+    let choice = inquire::Select::new("Select a release to download:", releases)
+        .with_help_message("↑/↓ to navigate, Enter to select (Top is latest)")
+        .prompt();
+
+    match choice {
+        Ok(release_wrapper) => {
+            info!("Selected release: {}", release_wrapper.0.tag_name);
+            Ok(release_wrapper.0)
+        }
+        Err(_) => {
+            println!("\nSelection canceled.");
+            std::process::exit(0);
+        }
+    }
 }
 
 fn parse_github(url_str: &str) -> Option<(String, String)> {

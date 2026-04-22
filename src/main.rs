@@ -48,8 +48,11 @@ impl Paths {
 }
 
 fn init() {
+    if cfg!(target_os = "macos") {
+        println!("Mac(wine) support is currently in development.");
+    }
     env_logger::builder()
-        .filter_level(log::LevelFilter::Off)
+        .filter_level(log::LevelFilter::Info)
         .parse_default_env()
         .init();
     info!("logger initialized");
@@ -87,12 +90,31 @@ fn create_all_dirs(paths: &Paths) -> Result<(), std::io::Error> {
     std::fs::create_dir_all(&paths.app_lang)
 }
 
+pub fn get_repository_url() -> String {
+    let default_url = "https://github.com/LocalizeLimbusCompany/LocalizeLimbusCompany";
+
+    let prompt_message = "Enter GitHub repository URL: ".to_string();
+
+    let url = inquire::Text::new(&prompt_message)
+        .with_default(default_url)
+        .with_help_message("Press Enter to use the default Limbus Localize repo")
+        .prompt();
+
+    match url {
+        Ok(val) => val,
+        Err(_) => {
+            println!("\nOperation canceled.");
+            exit(0);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     init();
 
-    let url = "https://github.com/LocalizeLimbusCompany/LocalizeLimbusCompany";
-    let release = llc::get_release(url).await.unwrap();
+    let url = &get_repository_url();
+    let release = llc::select_release(url).await.unwrap();
     let assets = llc::get_assets(release);
     let asset = select_asset(assets).0;
     let download_url = asset.browser_download_url;
