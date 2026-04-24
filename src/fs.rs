@@ -2,9 +2,11 @@ use fs_extra::dir::{CopyOptions, move_dir};
 use log::info;
 use std::fs;
 
-pub fn move_and_cleanup(paths: &crate::Paths) -> Result<(), Box<dyn std::error::Error>> {
-    let inner_lang_dir = paths.app_lang.join("LimbusCompany_Data").join("Lang");
-    let outer_lang_dir = &paths.app_lang;
+use crate::Paths;
+
+pub fn install_and_clean(paths: &Paths) -> Result<(), Box<dyn std::error::Error>> {
+    let inner_lang_dir = paths.lbc_lang.join("LimbusCompany_Data").join("Lang");
+    let outer_lang_dir = &paths.lbc_lang;
 
     if inner_lang_dir.exists() {
         info!("Moving all contents from inner Lang to outer Lang");
@@ -35,7 +37,7 @@ pub fn move_and_cleanup(paths: &crate::Paths) -> Result<(), Box<dyn std::error::
             }
         }
 
-        let redundant_root = paths.app_lang.join("LimbusCompany_Data");
+        let redundant_root = paths.lbc_lang.join("LimbusCompany_Data");
         if redundant_root.exists() {
             info!("Cleaning up redundant LimbusCompany_Data folder...");
             fs::remove_dir_all(redundant_root)?;
@@ -45,3 +47,5 @@ pub fn move_and_cleanup(paths: &crate::Paths) -> Result<(), Box<dyn std::error::
     }
     Ok(())
 }
+
+pub fn copy_to_lbc(paths: &Paths) -> () {}

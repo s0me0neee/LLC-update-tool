@@ -1,7 +1,7 @@
-mod config;
 mod fs;
 mod lang;
 mod llc;
+mod lock;
 mod path;
 mod steam;
 use inquire::InquireError;
@@ -25,24 +25,21 @@ struct Paths {
     archive: PathBuf,
     app_data: PathBuf,
     app_cache: PathBuf,
-    app_lang: PathBuf,
-    lb_data: PathBuf,
-    lb_lang: PathBuf,
+    lbc_data: PathBuf,
+    lbc_lang: PathBuf,
 }
 
 impl Paths {
-    fn new(archive: PathBuf, lb_data: PathBuf) -> Self {
+    fn new(archive: PathBuf, lbc_data: PathBuf) -> Self {
         let app_data = path::get_appdata_path();
         let app_cache = app_data.join("cache");
-        let app_lang = app_data.join("Lang");
-        let lb_lang = lb_data.join("Lang");
+        let lbc_lang = lbc_data.join("Lang");
         Self {
             archive,
             app_data,
             app_cache,
-            app_lang,
-            lb_data,
-            lb_lang,
+            lbc_data,
+            lbc_lang,
         }
     }
 }
@@ -86,8 +83,7 @@ fn select_asset(assets: Vec<AssetWarper>) -> AssetWarper {
 
 fn create_all_dirs(paths: &Paths) -> Result<(), std::io::Error> {
     std::fs::create_dir_all(&paths.app_cache)?;
-    std::fs::create_dir_all(&paths.app_data)?;
-    std::fs::create_dir_all(&paths.app_lang)
+    std::fs::create_dir(&paths.lbc_lang)
 }
 
 pub fn get_repository_url() -> String {
@@ -123,11 +119,12 @@ async fn main() {
     let paths = {
         // TODO: complete refactor the paths construction, this is just for testing
         let archive = PathBuf::from(&asset.name);
-        let lb_data = PathBuf::from("./test/LimbusCompany_Data");
+        let lbc_data = PathBuf::from("./test/LimbusCompany_Data");
         // NOTE: cache path is set to current directory for testing
         // NOTE: lb_data is set to current directory for testing
-        Paths::new(archive, lb_data)
+        Paths::new(archive, lbc_data)
     };
+
     // let _languages = lang::get_languages(&paths.lb_lang);
     // NOTE: enable this for production, it will read the current language from game data and show
     // it in the UI
@@ -139,21 +136,25 @@ async fn main() {
 
     info!("Path: {:?}", paths);
 
-    llc::download_and_extract(&paths, download_url)
+    let download_path = paths.app_cache.join(&paths.archive);
+    llc::download_asset(download_url, &download_path)
         .await
         .unwrap_or_else(|e| {
-            error!("Error during download and extraction: {}", e);
+            error!("Failed to download asset: {}", e);
+            panic!();
+        });
+    llc::extract_asset(&download_path, &paths.lbc_lang)
+        .await
+        .unwrap_or_else(|e| {
+            error!("Failed to extract asset: {}", e);
             panic!();
         });
 
     // TODO:build a lock file from download, and check locked cache before downloading, to avoid
     // unnecessary downloads and extractions
 
-    fs::move_and_cleanup(&paths).unwrap_or_else(|e| {
+    fs::install_and_clean(&paths).unwrap_or_else(|e| {
         error!("Error during move and cleanup: {}", e);
         panic!();
     });
 }
-
-#[tokio::test]
-async fn move_test() {}

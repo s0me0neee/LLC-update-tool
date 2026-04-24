@@ -39,16 +39,6 @@ impl std::fmt::Display for ReleaseWrapper {
     }
 }
 
-pub async fn download_and_extract(
-    paths: &crate::Paths,
-    download_url: Url,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let download_path = paths.app_cache.join(&paths.archive);
-    download_asset(download_url, &download_path).await?;
-    extract_asset(&download_path, &paths.app_lang).await?;
-    Ok(())
-}
-
 pub fn get_assets(release: Release) -> Vec<AssetWarper> {
     let assets = release
         .assets
@@ -60,7 +50,7 @@ pub fn get_assets(release: Release) -> Vec<AssetWarper> {
     assets
 }
 
-async fn extract_asset(
+pub async fn extract_asset(
     archive_path: &PathBuf,
     output_dir: &PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -116,7 +106,10 @@ async fn extract_asset(
     Ok(())
 }
 
-async fn download_asset(url: Url, target_file: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn download_asset(
+    url: Url,
+    target_file: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting download from URL: {}", url);
     let client = reqwest::Client::new();
 
@@ -150,21 +143,6 @@ async fn download_asset(url: Url, target_file: &PathBuf) -> Result<(), Box<dyn s
     pb.finish_with_message("Download completed successfully");
     Ok(())
 }
-
-// pub async fn get_release(url: &str) -> Result<Release, Box<dyn std::error::Error>> {
-//     let octo = octocrab::instance();
-//     info!("Using GitHub URL: {}", url);
-//     let (owner, repo) = parse_github(url)
-//         .ok_or_else(|| {
-//             error!("Failed to parse GitHub URL: {}", url);
-//             panic!();
-//         })
-//         .unwrap();
-//
-//     let latest = octo.repos(owner, repo).releases().get_latest().await?;
-//     Ok(latest)
-// }
-//
 
 pub async fn get_releases(url: &str) -> Result<Vec<ReleaseWrapper>, Box<dyn std::error::Error>> {
     let octo = octocrab::instance();
