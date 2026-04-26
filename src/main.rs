@@ -4,6 +4,7 @@ mod llc;
 mod lock;
 mod path;
 mod steam;
+use futures_util::future::err;
 use inquire::InquireError;
 use llc::AssetWarper;
 use log::{error, info, warn};
@@ -83,7 +84,24 @@ fn select_asset(assets: Vec<AssetWarper>) -> AssetWarper {
 
 fn create_all_dirs(paths: &Paths) -> Result<(), std::io::Error> {
     std::fs::create_dir_all(&paths.app_cache)?;
-    std::fs::create_dir(&paths.lbc_lang)
+    if !paths.lbc_data.exists() {
+        let ans = inquire::Confirm::new("Can't find Limbus Company data dir, creat one?")
+            .with_default(false)
+            .prompt();
+        return match ans {
+            Ok(true) => {
+                std::fs::create_dir_all(&paths.lbc_lang)?;
+                info!("Created dir {}", &paths.lbc_lang.display());
+                Ok(())
+            }
+            Ok(false) => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Can't find Limbus Company data dir",
+            )),
+            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Interrupted, e)),
+        };
+    }
+    Ok(())
 }
 
 pub fn get_repository_url() -> String {
@@ -125,7 +143,8 @@ async fn main() {
         Paths::new(archive, lbc_data)
     };
 
-    // let _languages = lang::get_languages(&paths.lb_lang);
+    let languages = lang::get_languages(&paths.lbc_lang);
+    dbg!(&languages);
     // NOTE: enable this for production, it will read the current language from game data and show
     // it in the UI
 
@@ -157,4 +176,24 @@ async fn main() {
         error!("Error during move and cleanup: {}", e);
         panic!();
     });
+}
+
+#[test]
+fn language_test() {
+    env_dbg_init!();
+    let paths = {
+        // TODO: complete refactor the paths construction, this is just for testing
+        let archive = PathBuf::from("test_none");
+        let lbc_data = if cfg!(windows) {
+            crate::steam::windows::get_lbc_data_dir_reg().unwrap()
+        } else {
+            crate::steam::get_lbc_data_dir_vdf()
+        };
+        dbg!(&lbc_data);
+        // NOTE: cache path is set to current directory for testing
+        // NOTE: lb_data is set to current directory for testing
+        Paths::new(archive, lbc_data)
+    };
+    let languages = lang::get_languages(&paths.lbc_lang);
+    dbg!(&languages);
 }

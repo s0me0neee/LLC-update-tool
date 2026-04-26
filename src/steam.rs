@@ -12,7 +12,139 @@ struct Game {
     install_dir: String,
 }
 
-pub fn get_lbc_data_dir() -> PathBuf {
+#[cfg(windows)]
+pub mod windows {
+    use std::path::PathBuf;
+
+    use log::{error, info};
+    use winreg::{
+        RegKey,
+        enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE},
+    };
+    pub fn get_lbc_data_dir_reg() -> Option<PathBuf> {
+        const GAME_NAME: &str = "Limbus Company";
+
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let apps_root = hkcu.open_subkey("Software\\Valve\\Steam\\Apps").ok()?;
+
+        for entry in apps_root.enum_keys() {
+            let appid_str = entry.ok()?;
+            let appid: u32 = appid_str.parse().ok()?;
+
+            if !is_game_installed(appid) {
+                continue;
+            }
+
+            let display_name = match get_game_name(appid) {
+                Some(name) => name,
+                None => continue,
+            };
+
+            if !display_name.eq_ignore_ascii_case(GAME_NAME) {
+                continue;
+            }
+
+            let path = match get_game_path(appid) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let lbc_data_dir = PathBuf::from(path);
+
+            if !lbc_data_dir.exists() {
+                error!(
+                    "Game data directory does not exist at {}",
+                    lbc_data_dir.display()
+                );
+                continue;
+            }
+
+            info!("Using game data directory: {}", lbc_data_dir.display());
+            return Some(lbc_data_dir.join("LimbusCompany_Data"));
+        }
+
+        None
+    }
+
+    fn is_game_installed(appid: u32) -> bool {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let path = format!("Software\\Valve\\Steam\\Apps\\{}", appid);
+
+        if let Ok(key) = hkcu.open_subkey(path)
+            && let Ok(installed) = key.get_value::<u32, _>("Installed")
+        {
+            return installed == 1;
+        }
+
+        false
+    }
+
+    fn get_game_name(appid: u32) -> Option<String> {
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let wow = format!(
+            "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
+            appid
+        );
+
+        if let Ok(key) = hklm.open_subkey(&wow)
+            && let Ok(name) = key.get_value("DilayName")
+        {
+            return Some(name);
+        }
+        let plain = format!(
+            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
+            appid
+        );
+
+        if let Ok(key) = hklm.open_subkey(&plain)
+            && let Ok(name) = key.get_value("DisplayName")
+        {
+            return Some(name);
+        }
+
+        None
+    }
+
+    fn get_game_path(appid: u32) -> Option<String> {
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+
+        let wow = format!(
+            "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
+            appid
+        );
+
+        if let Ok(key) = hklm.open_subkey(&wow)
+            && let Ok(loc) = key.get_value("InstallLocation")
+        {
+            return Some(loc);
+        }
+
+        let plain = format!(
+            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
+            appid
+        );
+
+        if let Ok(key) = hklm.open_subkey(&plain)
+            && let Ok(loc) = key.get_value("InstallLocation")
+        {
+            return Some(loc);
+        }
+
+        None
+    }
+
+    #[test]
+    fn get_game() {
+        match get_lbc_data_dir_reg() {
+            Some(path) => {
+                println!("Found:{}", path.display());
+            }
+            None => println!("Game not found"),
+        }
+    }
+}
+
+pub fn get_lbc_data_dir_vdf() -> PathBuf {
     const GAME_NAME: &str = "Limbus Company";
     info!("Looking for game: {}", GAME_NAME);
     let apps = steam::get_games();
