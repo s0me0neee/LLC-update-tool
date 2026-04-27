@@ -145,86 +145,66 @@ async fn main() {
         // NOTE: lb_data is set to current directory for testing
         Paths::new(archive, lbc_data)
     };
-    let mut if_skip_download = false;
-    let asset_lock;
+
     create_all_dirs(&paths).unwrap_or_else(|e| {
         error!("Failed to create necessary directories: {}", e);
         panic!();
     });
-
     let download_path = paths.app_cache.join(&paths.archive);
-    if download_path.exists() {
-        asset_lock = Lock::new(asset.name, &download_url, &download_path);
-        if let Some(lock) = setting.locks.iter_mut().find(|l| **l == asset_lock) {
-            if let Some(checksum) = asset.digest {
-                if lock.checksum == checksum {
-                    let ans = inquire::Confirm::new(
-                        "Asset already downloaded and verified. Skip Download and Install?.",
-                    )
+    let mut asset_lock = Lock::new(asset.name.clone(), &download_url, &download_path);
+    let mut if_skip_download = false;
+
+    if let Some(lock) = setting.locks.iter_mut().find(|l| l.name == asset.name)
+        && download_path.exists()
+    {
+        let _ = lock.refresh_checksum();
+
+        if let Some(expected_raw) = &asset.digest {
+            let expected_checksum = expected_raw.strip_prefix("sha256:").unwrap_or(expected_raw);
+            if lock.checksum == expected_checksum {
+                if_skip_download = inquire::Confirm::new("Asset verified. Skip?")
                     .with_default(true)
-                    .prompt();
+                    .prompt()
+                    .unwrap_or(true);
+            } else {
+                warn!(
+                    "Checksum mismatch! Local: {}, Expected: {}",
+                    lock.checksum, expected_checksum
+                );
+                let redo = inquire::Confirm::new("Checksum changed. Redownload?")
+                    .with_default(true)
+                    .prompt()
+                    .unwrap_or(true);
 
-                    match ans {
-                        Ok(true) => {
-                            if_skip_download = true;
-                        }
-                        Ok(false) => {
-                            if_skip_download = false;
-                        }
-                        Err(e) => {
-                            println!("\nOperation canceled: {}", e);
-                            std::process::exit(0);
-                        }
-                    }
-                } else {
-                    warn!(
-                        "Checksum mismatch for asset! Expected: {}, Found: {}",
-                        lock.checksum, checksum
-                    );
-                    let msg = "Asset checksum has changed. Proceed with update?";
-
-                    match inquire::Confirm::new(msg).with_default(false).prompt() {
-                        Ok(true) => {
-                            info!("Updating lock checksum to: {}", checksum);
-                            lock.checksum = checksum;
-                        }
-                        Ok(false) | Err(_) => {
-                            error!("Checksum verification failed. Aborting.");
-                            std::process::exit(1);
-                        }
-                    }
-                }
+                if_skip_download = !redo;
             }
-        } else {
-            warn!("No checksum available. Skipping verification.");
-        }
-
-        if !if_skip_download {
-            println!("Downloading from: {}", download_url);
-            llc::download_asset(download_url, &download_path)
-                .await
-                .unwrap_or_else(|e| {
-                    error!("Failed to download asset: {}", e);
-                    panic!();
-                });
-            setting.locks.push(asset_lock);
-            Setting::write(&setting).unwrap_or_else(|e| {
-                error!("Failed to update setting with new lock: {}", e);
-                panic!();
-            });
-        } else {
-            info!(
-                "Skipping download and installation for asset: {}",
-                paths.archive.display()
-            );
         }
     }
 
+    if !if_skip_download {
+        println!("Downloading from: {}", download_url);
+        llc::download_asset(download_url, &download_path)
+            .await
+            .expect("Download failed");
+
+        asset_lock.refresh_checksum().ok();
+
+        if let Some(lock) = setting.locks.iter_mut().find(|l| l.name == asset.name) {
+            *lock = asset_lock;
+        } else {
+            setting.locks.push(asset_lock);
+        }
+
+        Setting::write(&setting).expect("Failed to save settings");
+    } else {
+        info!("Skipping download for {}", asset.name);
+    }
+
     #[cfg(windows)]
+    // NOTE: enable this for production, it will read the current language from game data and show
     {
         let languages = lang::get_languages(&paths.lbc_lang);
         dbg!(&languages);
-        // NOTE: enable this for production, it will read the current language from game data and show
     }
 
     llc::extract_asset(&download_path, &paths.lbc_lang)

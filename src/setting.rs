@@ -1,3 +1,4 @@
+use core::panic;
 use std::{io, path::PathBuf};
 
 use log::{error, info, warn};
@@ -9,7 +10,7 @@ use crate::conf::{Config, ConfigError};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Lock {
-    name: String,
+    pub(crate) name: String,
     source: Url,
     path: PathBuf,
     pub(crate) checksum: String,
@@ -29,15 +30,21 @@ impl Config for Setting {
 
 impl Lock {
     pub fn new(name: String, source: &Url, path: &PathBuf) -> Self {
-        let sha = hash(path).unwrap_or_else(|e| {
-            error!("Failed to hash file: {}", e);
-            String::new()
-        });
         Lock {
             name,
             source: source.clone(),
             path: path.clone(),
-            checksum: sha,
+            checksum: String::new(),
+        }
+    }
+
+    pub fn refresh_checksum(&mut self) -> Result<(), String> {
+        match hash(&self.path) {
+            Ok(sha) => {
+                self.checksum = sha;
+                Ok(())
+            }
+            Err(e) => Err(format!("Failed to hash file at {:?}: {}", self.path, e)),
         }
     }
 }
@@ -62,10 +69,18 @@ fn hash(file: &PathBuf) -> io::Result<String> {
 pub fn setting_init() -> Setting {
     Setting::read().unwrap_or_else(|e| match e {
         ConfigError::NotFound(path) => {
-            let prompt_msg = format!("Can't find lock.json at {}, create one?", path.display());
+            let prompt_msg = format!(
+                "Can't find lock.json at {}, create one?",
+                std::path::absolute(&path)
+                    .unwrap_or_else(|e| {
+                        error!("Failed to get absolute path: {}", e);
+                        panic!();
+                    })
+                    .display()
+            );
 
             match inquire::Confirm::new(&prompt_msg)
-                .with_default(false)
+                .with_default(true)
                 .prompt()
             {
                 Ok(true) => {
