@@ -41,7 +41,9 @@ pub trait Config: Debug + Serialize + for<'de> Deserialize<'de> + Sized {
 
     fn write(config_value: &Self) -> Result<(), ConfigError> {
         let config_file_path = Self::config_file_path()?;
-        ensure_config_file_exists(&config_file_path)?;
+        if config_file_path.exists() && config_file_path.is_dir() {
+            return Err(ConfigError::NotAFile(config_file_path));
+        }
 
         if let Some(parent_dir_path) = config_file_path.parent() {
             if !parent_dir_path.exists() {
