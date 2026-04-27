@@ -2,6 +2,15 @@
 name = "llc"
 version = "0.1.0"
 edition = "2024"
+authors = ["s0me0neee"]
+repository = "https://github.com/s0me0neee/LLC-update-tool"
+description = "A CLI tool to update Limbus Company data files."
+
+[package.metadata.wix]
+upgrade-guid = "144F7910-213E-4613-B213-B37CF62353E8"
+path-guid = "10274E55-8C43-4CB5-94C3-6DF9460906B4"
+license = false
+eula = false
 
 [dependencies]
 dirs = "6.0.0"
@@ -33,3 +42,8 @@ thiserror = "2.0.18"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
