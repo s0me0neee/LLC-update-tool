@@ -17,16 +17,6 @@ pub fn get_steam_path() -> PathBuf {
     }
 }
 
-// NOTE: Use reg to get game path
-#[cfg(windows)]
-fn get_steam_path_reg() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
-    let steam_key = hkcu.open_subkey("Software\\Valve\\Steam")?;
-
-    let steam_path: String = steam_key.get_value("SteamPath")?;
-    Ok(PathBuf::from(steam_path))
-}
-
 pub fn get_appdata_path() -> PathBuf {
     let base = dirs::data_dir();
 

@@ -1,71 +1,83 @@
 use crate::lang::Language;
 use futures_util::io;
 use log::{error, info, warn};
+use octocrab::models::timelines::Source;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::{fmt::Debug, path::PathBuf};
 use url::Url;
 
-trait Config: Debug + Serialize + for<'de> Deserialize<'de> {
-    fn path(&self) -> Result<PathBuf, String>;
-    fn read(&self) -> Result<Self, String> {
-        let path = self.path()?;
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Lock {
+    name: String,
+    source: Url,
+    path: PathBuf,
+    checksum: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Setting {
+    date: chrono::NaiveDateTime,
+    locks: Vec<Lock>,
+}
+
+trait Config: Debug + Serialize + for<'de> Deserialize<'de> + Sized {
+    fn path() -> Result<PathBuf, String>;
+
+    fn read() -> Result<Self, String> {
+        let path = Self::path()?;
         let ctx = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let config = serde_json::from_str(&ctx).map_err(|e| e.to_string())?;
-        Ok(config)
+        serde_json::from_str(&ctx).map_err(|e| e.to_string())
     }
-    fn write(&self) -> Result<(), String> {
-        let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
-        if let Some(parent) = std::path::Path::new(&self.path()?).parent() {
+
+    fn write(conf: &Self) -> Result<(), String> {
+        let json = serde_json::to_string(conf).map_err(|e| e.to_string())?;
+        let path = Self::path()?;
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        std::fs::write(std::path::Path::new(&self.path()?), json).map_err(|e| e.to_string())
+        std::fs::write(&path, json).map_err(|e| e.to_string())
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct Lock {
-    git_url: Url,
-    path: PathBuf,
-    sha: String,
-}
-
-impl Config for Lock {
-    fn path(&self) -> Result<PathBuf, String> {
+// NOTE: remove redundant code and use the defult Config trait impl
+impl Config for Setting {
+    fn path() -> Result<PathBuf, String> {
         Ok(crate::path::get_appdata_path().join("lock.json"))
     }
 
-    fn read(&self) -> Result<Self, String> {
-        let path = self.path()?;
+    fn read() -> Result<Self, String> {
+        let path = Self::path()?;
         info!("Reading lock from: {}", path.display());
         let ctx = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
         let config = serde_json::from_str(&ctx).map_err(|e| e.to_string())?;
         Ok(config)
     }
 
-    fn write(&self) -> Result<(), String> {
-        let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
-        if let Some(parent) = std::path::Path::new(&self.path()?).parent() {
+    fn write(conf: &Self) -> Result<(), String> {
+        let json = serde_json::to_string(conf).map_err(|e| e.to_string())?;
+        if let Some(parent) = std::path::Path::new(&Self::path()?).parent() {
             warn!(
                 "Lock file does not exist, creating parent directory: {}",
                 parent.display()
             );
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        std::fs::write(std::path::Path::new(&self.path()?), json).map_err(|e| e.to_string())
+        std::fs::write(std::path::Path::new(&Self::path()?), json).map_err(|e| e.to_string())
     }
 }
 
 impl Lock {
-    fn new(git_url: &Url, file: &PathBuf) -> Self {
-        let sha = hash(file).unwrap_or_else(|e| {
+    fn new(name: String, source: &Url, path: &PathBuf) -> Self {
+        let sha = hash(path).unwrap_or_else(|e| {
             error!("Failed to hash file: {}", e);
             String::new()
         });
         Lock {
-            git_url: git_url.clone(),
-            path: file.clone(),
-            sha,
+            name,
+            source: source.clone(),
+            path: path.clone(),
+            checksum: sha,
         }
     }
 }
@@ -88,8 +100,20 @@ fn hash(file: &PathBuf) -> io::Result<String> {
 }
 
 #[test]
-fn test_lock() {
-    let file = std::path::PathBuf::from("./justfile");
-    let url = Url::parse("https://google.com").unwrap();
-    let lock = Lock::new(&url, &file);
+fn lock_test() {
+    let locks = vec![Lock::new(
+        "test".to_string(),
+        &Url::parse("https://example.com").unwrap(),
+        &PathBuf::from("./justfile"),
+    )];
+
+    let setting = Setting {
+        date: chrono::Local::now().naive_local(),
+        locks,
+    };
+
+    let _ = Setting::write(&setting).expect("Failed to write lock");
+    let ctx = Setting::read().expect("Failed to read lock");
+
+    assert_eq!(setting, ctx);
 }

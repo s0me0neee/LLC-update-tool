@@ -137,6 +137,10 @@ async fn main() {
     let paths = {
         // TODO: complete refactor the paths construction, this is just for testing
         let archive = PathBuf::from(&asset.name);
+
+        #[cfg(not(windows))]
+        let lbc_data = crate::steam::get_lbc_data_dir_vdf();
+
         let lbc_data = PathBuf::from("./test/LimbusCompany_Data");
         // NOTE: cache path is set to current directory for testing
         // NOTE: lb_data is set to current directory for testing
@@ -182,16 +186,15 @@ async fn main() {
 fn language_test() {
     env_dbg_init!();
     let paths = {
-        // TODO: complete refactor the paths construction, this is just for testing
         let archive = PathBuf::from("test_none");
-        let lbc_data = if cfg!(windows) {
-            crate::steam::windows::get_lbc_data_dir_reg().unwrap()
-        } else {
-            crate::steam::get_lbc_data_dir_vdf()
-        };
+
+        #[cfg(windows)]
+        let lbc_data = crate::steam::windows::get_lbc_data_dir_reg().unwrap();
+
+        #[cfg(not(windows))]
+        let lbc_data = crate::steam::get_lbc_data_dir_vdf();
+
         dbg!(&lbc_data);
-        // NOTE: cache path is set to current directory for testing
-        // NOTE: lb_data is set to current directory for testing
         Paths::new(archive, lbc_data)
     };
     let languages = lang::get_languages(&paths.lbc_lang);
