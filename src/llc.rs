@@ -1,8 +1,7 @@
-use log::error;
-use log::info;
+use log::{error, info, warn};
 use octocrab::models::repos::Release;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::Path;
 use url::Url;
 
 #[derive(Debug)]
@@ -40,107 +39,144 @@ impl std::fmt::Display for ReleaseWrapper {
 }
 
 pub fn get_assets(release: Release) -> Vec<AssetWarper> {
-    let assets = release
+    let release_tag = release.tag_name.clone();
+    let wrapped_assets = release
         .assets
         .into_iter()
         .map(AssetWarper)
         .collect::<Vec<_>>();
-    info!("Latest release: {}", release.tag_name);
-    info!("{} assets found", assets.len());
-    assets
+    info!("Selected release tag: {}", release_tag);
+    info!(
+        "Found {} asset(s) in selected release",
+        wrapped_assets.len()
+    );
+    wrapped_assets
 }
 
 pub async fn extract_asset(
-    archive_path: &PathBuf,
-    output_dir: &PathBuf,
+    archive_file_path: &Path,
+    output_dir_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!(
-        "Extrcting file path: {}, output dir: {}",
-        archive_path.display(),
-        output_dir.display()
+        "Extracting archive {} into {}",
+        archive_file_path.display(),
+        output_dir_path.display()
     );
 
-    if !output_dir.exists() {
-        std::fs::create_dir_all(output_dir)?;
+    if !output_dir_path.exists() {
+        info!(
+            "Output directory does not exist, creating {}",
+            output_dir_path.display()
+        );
+        std::fs::create_dir_all(output_dir_path)?;
     }
-    match archive_path.extension().and_then(|s| s.to_str()) {
+
+    let archive_extension = archive_file_path.extension().and_then(|ext| ext.to_str());
+    match archive_extension {
         Some("7z") => {
             println!("Extracting 7z archive...");
-            sevenz_rust::decompress_file(archive_path, output_dir)?;
+            sevenz_rust::decompress_file(archive_file_path, output_dir_path)?;
+            info!("7z extraction completed successfully");
         }
         Some("zip") => {
-            let file = File::open(archive_path)?;
-            let mut archive = zip::ZipArchive::new(file)?;
-            let pb = indicatif::ProgressBar::new(archive.len() as u64);
+            let zip_file = File::open(archive_file_path)?;
+            let mut zip_archive = zip::ZipArchive::new(zip_file)?;
+            let pb = indicatif::ProgressBar::new(zip_archive.len() as u64);
             pb.set_style(indicatif::ProgressStyle::default_bar()
         .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
         .progress_chars("#>-"));
-            pb.set_message(format!("Extrcting zip {}", output_dir.display()));
+            pb.set_message(format!("Extracting zip into {}", output_dir_path.display()));
 
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i)?;
+            for index in 0..zip_archive.len() {
+                let mut zip_entry = zip_archive.by_index(index)?;
 
-                let outpath = match file.enclosed_name() {
-                    Some(path) => output_dir.join(path),
-                    None => continue, // Skip files with suspicious paths
+                let output_path = match zip_entry.enclosed_name() {
+                    Some(path) => output_dir_path.join(path),
+                    None => {
+                        warn!(
+                            "Skipping zip entry at index {} due to suspicious path",
+                            index
+                        );
+                        pb.inc(1);
+                        continue;
+                    }
                 };
 
-                if file.is_dir() {
-                    std::fs::create_dir_all(&outpath)?;
+                if zip_entry.is_dir() {
+                    std::fs::create_dir_all(&output_path)?;
                 } else {
-                    if let Some(p) = outpath.parent()
-                        && !p.exists()
-                    {
-                        std::fs::create_dir_all(p)?;
+                    let output_parent = output_path.parent();
+                    if let Some(parent_dir) = output_parent {
+                        if !parent_dir.exists() {
+                            std::fs::create_dir_all(parent_dir)?;
+                        }
                     }
-                    let mut outfile = File::create(&outpath)?;
-                    std::io::copy(&mut file, &mut outfile)?;
+                    let mut output_file = File::create(&output_path)?;
+                    std::io::copy(&mut zip_entry, &mut output_file)?;
                 }
                 pb.inc(1);
             }
-            pb.finish_with_message("Extrction completed successfully");
+            pb.finish_with_message("Extraction completed successfully");
+            info!("Zip extraction completed successfully");
         }
-        _ => return Err("Unsupported file extension. Use .7z or .zip".into()),
+        _ => {
+            error!(
+                "Unsupported archive extension for {}. Expected .7z or .zip",
+                archive_file_path.display()
+            );
+            return Err("Unsupported file extension. Use .7z or .zip".into());
+        }
     }
 
     Ok(())
 }
 
 pub async fn download_asset(
-    url: Url,
-    target_file: &PathBuf,
+    download_url: Url,
+    target_file_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Starting download from URL: {}", url);
+    info!("Starting download from URL: {}", download_url);
     let client = reqwest::Client::new();
 
     let response = client
-        .get(url)
+        .get(download_url.clone())
         .header("User-Agent", "llc-updater")
         .send()
-        .await?;
+        .await?
+        .error_for_status()?;
 
-    let content_size = response.content_length().ok_or_else(|| {
-        error!("Failed to get content length from GitHub");
-        panic!();
-    })?;
+    let content_size = match response.content_length() {
+        Some(size) => size,
+        None => {
+            error!("Failed to get content length from {}", download_url);
+            return Err("Missing content length header in response".into());
+        }
+    };
 
-    info!("Downloading to: {}", target_file.display());
+    info!("Downloading to: {}", target_file_path.display());
 
     let pb = indicatif::ProgressBar::new(content_size);
     pb.set_style(indicatif::ProgressStyle::default_bar()
         .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
         .progress_chars("#>-"));
-    pb.set_message(format!("Downloading {}", target_file.display()));
+    pb.set_message(format!("Downloading {}", target_file_path.display()));
 
-    let mut file = std::fs::File::create(target_file)?;
+    let mut output_file = std::fs::File::create(target_file_path)?;
     let mut stream = response.bytes_stream();
+    let mut downloaded_bytes = 0u64;
 
     while let Some(item) = futures_util::StreamExt::next(&mut stream).await {
         let chunk = item?;
-        std::io::Write::write_all(&mut file, &chunk)?;
+        std::io::Write::write_all(&mut output_file, &chunk)?;
+        downloaded_bytes += chunk.len() as u64;
         pb.inc(chunk.len() as u64);
     }
     pb.finish_with_message("Download completed successfully");
+    info!(
+        "Download completed: {} byte(s) written to {}",
+        downloaded_bytes,
+        target_file_path.display()
+    );
     Ok(())
 }
 
@@ -148,13 +184,13 @@ pub async fn get_releases(url: &str) -> Result<Vec<ReleaseWrapper>, Box<dyn std:
     let octo = octocrab::instance();
     info!("Fetching releases from GitHub URL: {}", url);
 
-    let (owner, repo) = parse_github(url).ok_or_else(|| {
+    let (owner_name, repo_name) = parse_github(url).ok_or_else(|| {
         error!("Failed to parse GitHub URL: {}", url);
-        "Invalid GitHub URL format" // Returns as a Boxed error
+        "Invalid GitHub URL format"
     })?;
 
     let page = octo
-        .repos(owner, repo)
+        .repos(owner_name.clone(), repo_name.clone())
         .releases()
         .list()
         .per_page(5)
@@ -172,8 +208,10 @@ pub async fn get_releases(url: &str) -> Result<Vec<ReleaseWrapper>, Box<dyn std:
     }
 
     info!(
-        "Found {} releases. Defaulting to newest: {}",
+        "Found {} release(s) for {}/{}. Newest tag: {}",
         releases.len(),
+        owner_name,
+        repo_name,
         releases[0].0.tag_name
     );
 
@@ -183,17 +221,18 @@ pub async fn get_releases(url: &str) -> Result<Vec<ReleaseWrapper>, Box<dyn std:
 pub async fn select_release(url: &str) -> Result<Release, Box<dyn std::error::Error>> {
     let releases = get_releases(url).await?;
 
-    let choice = inquire::Select::new("Select a release to download:", releases)
+    let selection = inquire::Select::new("Select a release to download:", releases)
         .with_help_message("↑/↓ to navigate, Enter to select (Top is latest)")
         .prompt();
 
-    match choice {
+    match selection {
         Ok(release_wrapper) => {
             info!("Selected release: {}", release_wrapper.0.tag_name);
             Ok(release_wrapper.0)
         }
-        Err(_) => {
-            println!("\nSelection canceled.");
+        Err(err) => {
+            warn!("Release selection prompt ended: {}", err);
+            println!("\nRelease selection canceled.");
             std::process::exit(0);
         }
     }
@@ -205,11 +244,11 @@ fn parse_github(url_str: &str) -> Option<(String, String)> {
         return None;
     }
 
-    let mut segments = url.path_segments()?;
-    let owner = segments.next()?;
-    let repo_raw = segments.next()?; // Get the second segment
+    let mut path_segments = url.path_segments()?;
+    let owner = path_segments.next()?;
+    let repo_segment = path_segments.next()?;
 
-    let repo = repo_raw.strip_suffix(".git").unwrap_or(repo_raw);
+    let repo = repo_segment.strip_suffix(".git").unwrap_or(repo_segment);
 
     if owner.is_empty() || repo.is_empty() {
         return None;

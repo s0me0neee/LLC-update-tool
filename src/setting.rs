@@ -1,7 +1,10 @@
-use core::panic;
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    process::exit,
+};
 
-use log::{error, info, warn};
+use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use url::Url;
@@ -12,7 +15,8 @@ use crate::conf::{Config, ConfigError};
 pub struct Lock {
     pub(crate) name: String,
     source: Url,
-    path: PathBuf,
+    #[serde(rename = "path")]
+    asset_file_path: PathBuf,
     pub(crate) checksum: String,
 }
 
@@ -23,34 +27,38 @@ pub struct Setting {
 }
 
 impl Config for Setting {
-    fn path() -> Result<PathBuf, ConfigError> {
+    fn config_file_path() -> Result<PathBuf, ConfigError> {
         Ok(crate::path::get_appdata_path().join("lock.json"))
     }
 }
 
 impl Lock {
-    pub fn new(name: String, source: &Url, path: &PathBuf) -> Self {
+    pub fn new(name: String, source_url: &Url, asset_file_path: &Path) -> Self {
         Lock {
             name,
-            source: source.clone(),
-            path: path.clone(),
+            source: source_url.clone(),
+            asset_file_path: asset_file_path.to_path_buf(),
             checksum: String::new(),
         }
     }
 
     pub fn refresh_checksum(&mut self) -> Result<(), String> {
-        match hash(&self.path) {
+        match hash(&self.asset_file_path) {
             Ok(sha) => {
                 self.checksum = sha;
                 Ok(())
             }
-            Err(e) => Err(format!("Failed to hash file at {:?}: {}", self.path, e)),
+            Err(err) => Err(format!(
+                "Failed to hash file at {}: {}",
+                self.asset_file_path.display(),
+                err
+            )),
         }
     }
 }
 
-fn hash(file: &PathBuf) -> io::Result<String> {
-    let mut file = std::fs::File::open(file)?;
+fn hash(file_path: &Path) -> io::Result<String> {
+    let mut file = std::fs::File::open(file_path)?;
     let mut hasher = sha2::Sha256::new();
     let mut buffer = [0u8; 8192];
 
@@ -67,71 +75,133 @@ fn hash(file: &PathBuf) -> io::Result<String> {
 }
 
 pub fn setting_init() -> Setting {
-    Setting::read().unwrap_or_else(|e| match e {
-        ConfigError::NotFound(path) => {
-            let prompt_msg = format!(
-                "Can't find lock.json at {}, create one?",
-                std::path::absolute(&path)
-                    .unwrap_or_else(|e| {
-                        error!("Failed to get absolute path: {}", e);
-                        panic!();
-                    })
-                    .display()
+    match Setting::read() {
+        Ok(setting) => {
+            log::info!(
+                "Loaded settings from {} with {} lock(s)",
+                Setting::config_file_path()
+                    .map(|config_file_path| config_file_path.display().to_string())
+                    .unwrap_or_else(|_| "<unknown config file>".to_string()),
+                setting.locks.len()
             );
+            setting
+        }
+        Err(err) => handle_setting_init_error(err),
+    }
+}
 
-            match inquire::Confirm::new(&prompt_msg)
-                .with_default(true)
-                .prompt()
-            {
-                Ok(true) => {
-                    let default_setting = Setting::default();
-                    warn!("Creating default config at {}", path.display());
-                    std::fs::create_dir_all(path.parent().unwrap()).unwrap_or_else(|err| {
-                        error!("Failed to create config directory: {}", err);
-                        panic!();
-                    });
-                    if let Err(write_err) = Setting::write(&default_setting) {
-                        match write_err {
-                            ConfigError::NotFound(path_buf) => {
-                                std::fs::File::create_new(path_buf).unwrap_or_else(|err| {
-                                    error!("Failed to create config file: {}", err);
-                                    panic!();
-                                });
-                            }
-                            _ => {
-                                error!("Failed to create default config: {}", write_err);
-                                panic!();
-                            }
-                        }
-                    }
-                    default_setting
-                }
-                Ok(false) => {
-                    error!("Config file is required to run. Exiting.");
-                    std::process::exit(1);
-                }
-                Err(_) => {
-                    error!("Selection canceled.");
-                    std::process::exit(1);
-                }
+fn handle_setting_init_error(err: ConfigError) -> Setting {
+    match err {
+        ConfigError::NotFound(config_file_path) => {
+            create_default_setting_interactive(config_file_path)
+        }
+        ConfigError::NotAFile(config_file_path) => {
+            error!(
+                "Config file path points to a directory, not a file: {}",
+                config_file_path.display()
+            );
+            panic!("filesystem conflict at config path");
+        }
+        ConfigError::JsonError(err) => {
+            error!("Config file is not valid JSON: {}", err);
+            panic!("invalid config json");
+        }
+        ConfigError::IoError(err) => {
+            error!("I/O error while reading config: {}", err);
+            panic!("config io error");
+        }
+    }
+}
+
+fn create_default_setting_interactive(config_file_path: PathBuf) -> Setting {
+    let absolute_path_display = std::path::absolute(&config_file_path)
+        .map(|absolute_path| absolute_path.display().to_string())
+        .unwrap_or_else(|err| {
+            error!("Failed to resolve absolute config path: {}", err);
+            config_file_path.display().to_string()
+        });
+
+    let prompt_message = format!(
+        "Can't find lock.json at {}. Create it now?",
+        absolute_path_display
+    );
+
+    let should_create = match inquire::Confirm::new(&prompt_message)
+        .with_default(true)
+        .prompt()
+    {
+        Ok(answer) => answer,
+        Err(err) => {
+            error!("Config creation prompt failed: {}", err);
+            exit(1);
+        }
+    };
+
+    if !should_create {
+        error!("Config file is required to run. Exiting.");
+        exit(1);
+    }
+
+    create_default_setting(config_file_path)
+}
+
+fn create_default_setting(config_file_path: PathBuf) -> Setting {
+    let default_setting = Setting::default();
+    warn!(
+        "Creating default config file at {}",
+        config_file_path.display()
+    );
+
+    let config_dir_path = config_file_path.parent().unwrap_or_else(|| {
+        error!(
+            "Cannot determine parent directory for config file path: {}",
+            config_file_path.display()
+        );
+        panic!("invalid config path");
+    });
+
+    std::fs::create_dir_all(config_dir_path).unwrap_or_else(|err| {
+        error!(
+            "Failed to create config directory {}: {}",
+            config_dir_path.display(),
+            err
+        );
+        panic!();
+    });
+
+    if let Err(write_err) = Setting::write(&default_setting) {
+        warn!(
+            "Initial write failed while creating default config: {}",
+            write_err
+        );
+
+        match write_err {
+            ConfigError::NotFound(missing_path) => {
+                std::fs::File::create(&missing_path).unwrap_or_else(|err| {
+                    error!(
+                        "Failed to create config file {}: {}",
+                        missing_path.display(),
+                        err
+                    );
+                    panic!();
+                });
+                Setting::write(&default_setting).unwrap_or_else(|err| {
+                    error!(
+                        "Failed to write default config after file creation: {}",
+                        err
+                    );
+                    panic!();
+                });
+            }
+            other => {
+                error!("Failed to create default config: {}", other);
+                panic!();
             }
         }
+    }
 
-        ConfigError::NotAFile(path) => {
-            error!("Path is a directory, not a file: {}", path.display());
-            panic!("Filesystem conflict");
-        }
-
-        ConfigError::JsonError(error) => {
-            error!("Config file is corrupted: {}", error);
-            panic!("Invalid JSON");
-        }
-
-        ConfigError::IoError(error) => {
-            error!("IO error: {}", error);
-            panic!("File system error");
-        }
-    })
+    log::info!("Default config initialized successfully");
+    default_setting
 }
 
 #[test]

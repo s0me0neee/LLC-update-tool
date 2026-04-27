@@ -2,35 +2,30 @@ use super::*;
 use std::path::PathBuf;
 
 pub fn get_steam_path() -> PathBuf {
-    let base = dirs::data_local_dir();
+    let Some(mut local_data_dir) = dirs::data_local_dir() else {
+        error!("Could not resolve local data directory for Steam path");
+        panic!();
+    };
 
-    match base {
-        Some(mut path) => {
-            path.push("Steam");
-            info!("Steam path: {}", path.display());
-            path
-        }
-        None => {
-            error!("Could not find local data directory");
-            panic!();
-        }
-    }
+    local_data_dir.push("Steam");
+    info!("Resolved Steam path: {}", local_data_dir.display());
+    local_data_dir
 }
 
 pub fn get_appdata_path() -> PathBuf {
-    let base = dirs::data_dir();
-
-    match base {
-        Some(mut path) => {
-            path.push("llc/");
-            info!("App data path: {}", path.display());
-            path
-        }
-        None => {
-            error!("Could not find cache directory");
-            panic!();
-        }
+    let Some(mut user_data_dir) = dirs::data_dir() else {
+        error!("Could not resolve user data directory for LLC config path");
+        panic!();
     };
+
+    user_data_dir.push("llc/");
+    info!("Resolved app data path: {}", user_data_dir.display());
+
     // NOTE: for testing, we want to use a local directory instead of the actual appdata directory
-    PathBuf::from("./test/llc")
+    let test_override_path = PathBuf::from("./test/llc");
+    warn!(
+        "Using test override app data path instead of resolved path: {}",
+        test_override_path.display()
+    );
+    test_override_path
 }
