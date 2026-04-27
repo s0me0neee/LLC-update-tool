@@ -19,8 +19,6 @@ pub fn get_appdata_path() -> PathBuf {
     };
 
     user_data_dir.push("llc/");
-    info!("Resolved app data path: {}", user_data_dir.display());
-
     // NOTE: for testing, we want to use a local directory instead of the actual appdata directory
     let test_override_path = PathBuf::from("./test/llc");
     warn!(

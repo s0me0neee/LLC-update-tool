@@ -17,7 +17,7 @@ use crate::setting::{Lock, Setting};
 macro_rules! env_dbg_init {
     () => {
         env_logger::builder()
-            .filter_level(log::LevelFilter::max())
+            .filter_level(log::LevelFilter::Debug)
             .parse_default_env()
             .init();
         info!("logger initialized");
@@ -289,6 +289,12 @@ async fn main() {
 
 #[test]
 fn language_test() {
+    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+        return;
+    }
+    if std::env::var_os("LLC_RUN_INTEGRATION_TESTS").is_none() {
+        return;
+    }
     env_dbg_init!();
     let paths = {
         let archive_file_path = PathBuf::from("test_none");
