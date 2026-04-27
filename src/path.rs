@@ -18,12 +18,15 @@ pub fn get_appdata_path() -> PathBuf {
         panic!();
     };
 
+    if std::env::var_os("TEST").is_some() {
+        // NOTE: for testing, we want to use a local directory instead of the actual appdata directory
+        let test_override_path = PathBuf::from("./test/llc");
+        warn!(
+            "Using test override app data path instead of resolved path: {}",
+            test_override_path.display()
+        );
+        return test_override_path;
+    }
     user_data_dir.push("llc/");
-    // NOTE: for testing, we want to use a local directory instead of the actual appdata directory
-    let test_override_path = PathBuf::from("./test/llc");
-    warn!(
-        "Using test override app data path instead of resolved path: {}",
-        test_override_path.display()
-    );
-    test_override_path
+    user_data_dir
 }

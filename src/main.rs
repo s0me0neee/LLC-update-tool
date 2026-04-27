@@ -156,6 +156,22 @@ fn get_repository_url() -> String {
     }
 }
 
+fn get_font_url() -> String {
+    let default_url = "https://raw.githubusercontent.com/LocalizeLimbusCompany/LocalizeLimbusCompany/refs/heads/main/Fonts/LLCCN-Font.7z";
+
+    let prompt_message = "Font asset URL:";
+
+    let input_result = inquire::Text::new(prompt_message)
+        .with_default(default_url)
+        .with_help_message("Press Enter to use the source")
+        .prompt();
+
+    match input_result {
+        Ok(val) => val,
+        Err(err) => handle_prompt_error("Download URL input", err),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     init();
@@ -166,6 +182,7 @@ async fn main() {
     );
 
     let repository_url = get_repository_url();
+    let font_url = get_font_url();
     info!("Fetching releases from {}", repository_url);
     println!("Fetching releases...");
     let selected_release = llc::select_release(&repository_url).await.unwrap();
@@ -177,10 +194,28 @@ async fn main() {
 
     let paths = {
         let archive_file_path = PathBuf::from(&selected_asset.name);
-        #[cfg(not(windows))]
-        // let lbc_data_dir = crate::steam::get_lbc_data_dir_vdf();
-        let lbc_data_dir = PathBuf::from("./test/LimbusCompany_Data");
-        // NOTE: lb_data is set to current directory for testing
+
+        let lbc_data_dir = if std::env::var_os("TEST").is_some() {
+            PathBuf::from("./test/LimbusCompany_Data")
+        } else if cfg!(not(windows)) {
+            crate::steam::get_lbc_data_dir_vdf()
+        } else {
+            #[cfg(windows)]
+            crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|e| {
+                error!("Detailed Registry Error: {}", e);
+
+                // Print a user-friendly message to stderr before exiting
+                eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
+                eprintln!("Try running with --verbose for more details or check your logs.");
+
+                std::process::exit(1); // Exit gracefully instead of panicking
+            });
+            #[cfg(not(windows))]
+            {
+                unreachable!("This branch is handled by the cfg!(not(windows)) above")
+            }
+        };
+
         Paths::new(archive_file_path, lbc_data_dir)
     };
 
