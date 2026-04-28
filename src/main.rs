@@ -530,7 +530,7 @@ async fn main() {
 
 #[test]
 fn language_test() {
-    if !crate::path::is_test_mode() {
+    if crate::path::is_test_mode() {
         return;
     }
     env_dbg_init!();
