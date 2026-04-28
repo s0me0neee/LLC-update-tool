@@ -406,15 +406,13 @@ async fn main() {
             crate::steam::get_lbc_data_dir_vdf()
         } else {
             #[cfg(windows)]
-            crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|e| {
-                error!("Detailed Registry Error: {}", e);
-
-                // Print a user-friendly message to stderr before exiting
-                eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
-                eprintln!("Try running with --verbose for more details or check your logs.");
-
-                std::process::exit(1); // Exit gracefully instead of panicking
-            });
+            {
+                crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|| {
+                    error!("Could not find LBC data directory in Registry.");
+                    eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
+                    std::process::exit(1);
+                })
+            }
             #[cfg(not(windows))]
             {
                 unreachable!("This branch is handled by the cfg!(not(windows)) above")
