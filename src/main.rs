@@ -530,10 +530,7 @@ async fn main() {
 
 #[test]
 fn language_test() {
-    if std::env::var_os("GITHUB_ACTIONS").is_some() {
-        return;
-    }
-    if std::env::var_os("LLC_RUN_INTEGRATION_TESTS").is_none() {
+    if !crate::path::is_test_mode() {
         return;
     }
     env_dbg_init!();

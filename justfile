@@ -27,7 +27,7 @@ test_verbose:
     {{cargo}} test --verbose
 
 test_integration:
-    LLC_RUN_INTEGRATION_TESTS=1 {{cargo}} test
+    TEST=1 {{cargo}} test
 
 fmt:
     {{cargo}} fmt
@@ -40,4 +40,3 @@ prepare_test_dirs:
 
 clean:
     rm -rf {{test_cache_dir}} {{test_lang_dir}} {{lbc_lang_dir}}
-

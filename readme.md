@@ -101,15 +101,15 @@ Tests:
 cargo test
 ```
 
-Integration test gate:
+Integration tests:
 
 ```bash
-LLC_RUN_INTEGRATION_TESTS=1 cargo test
+TEST=1 cargo test
 ```
 
 Notes:
 
-- Integration tests are automatically disabled on GitHub Actions runners.
+- Test mode is enabled when `TEST` is truthy (`1/true/yes/...`) or when running on GitHub Actions (`GITHUB_ACTIONS` is set).
 
 ## Authors
 

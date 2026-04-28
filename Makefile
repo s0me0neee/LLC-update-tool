@@ -16,7 +16,7 @@ help:
 	@echo "  make run                - Clean and run (RUST_LOG=$(RUST_LOG))"
 	@echo "  make test               - Run tests"
 	@echo "  make test-verbose        - Run tests (verbose)"
-	@echo "  make test-integration    - Run integration tests (LLC_RUN_INTEGRATION_TESTS=1)"
+	@echo "  make test-integration    - Run integration tests (TEST=1)"
 	@echo "  make fmt                - Format (cargo fmt)"
 	@echo "  make clippy             - Lint (cargo clippy)"
 	@echo "  make prepare-test-dirs  - Create local test directories"
@@ -38,7 +38,7 @@ test-verbose:
 	$(CARGO) test --verbose
 
 test-integration:
-	LLC_RUN_INTEGRATION_TESTS=1 $(CARGO) test
+	TEST=1 $(CARGO) test
 
 fmt:
 	$(CARGO) fmt
