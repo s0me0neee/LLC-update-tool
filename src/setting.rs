@@ -29,6 +29,9 @@ pub struct Setting {
 
 impl Config for Setting {
     fn config_file_path() -> Result<PathBuf, ConfigError> {
+        if let Some(override_path) = std::env::var_os("LLC_CONFIG_FILE") {
+            return Ok(PathBuf::from(override_path));
+        }
         Ok(crate::path::get_appdata_path().join("lock.json"))
     }
 }
@@ -207,6 +210,22 @@ fn create_default_setting(config_file_path: PathBuf) -> Setting {
 
 #[test]
 fn lock_test() {
+    static TEST_MUTEX: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    let _guard = TEST_MUTEX
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap();
+
+    let test_dir_path = std::env::temp_dir().join(format!(
+        "llc-test-{}-{}",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    let test_config_file_path = test_dir_path.join("lock.json");
+    unsafe {
+        std::env::set_var("LLC_CONFIG_FILE", &test_config_file_path);
+    }
+
     let locks = vec![Lock::new(
         "test".to_string(),
         &Url::parse("https://example.com").unwrap(),
@@ -229,4 +248,9 @@ fn lock_test() {
     let ctx = Setting::read().expect("Failed to read lock");
 
     assert_eq!(setting, ctx);
+
+    unsafe {
+        std::env::remove_var("LLC_CONFIG_FILE");
+    }
+    let _ = std::fs::remove_dir_all(test_dir_path);
 }

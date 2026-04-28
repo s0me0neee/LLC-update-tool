@@ -4,7 +4,7 @@ CLI tool to download a GitHub release asset (for example from [LocalizeLimbusCom
 
 ## Warning
 
-Font installation is not implemented yet. Some languages may not display correctly until you install the font manually:
+Font installation is optional but recommended for some languages. If the game shows missing glyphs, install the font when prompted, or install it manually:
 [LLCCN-Font.7z](https://raw.githubusercontent.com/LocalizeLimbusCompany/LocalizeLimbusCompany/refs/heads/main/Fonts/LLCCN-Font.7z).
 
 ## Description
@@ -90,8 +90,8 @@ Common issues and useful commands:
 - Unsupported archive:
   - Only `.zip` and `.7z` assets are supported.
 - Test overrides (important):
-  - App data directory is currently overridden to `./test/llc` (see `src/path.rs`).
-  - On non-Windows builds, the game data directory may be set to `./test/LimbusCompany_Data` depending on `src/main.rs`.
+  - When `TEST=1` (or on GitHub Actions), app data is overridden to `./test/llc` (see `src/path.rs`).
+  - When `TEST=1` (or on GitHub Actions), the game data directory is set to `./test/LimbusCompany_Data` (see `src/main.rs`).
   - For production usage, remove/disable these overrides so OS/Steam discovery paths are used.
   - You can create the expected local test directories via `make prepare-test-dirs` or `just prepare_test_dirs`.
 
