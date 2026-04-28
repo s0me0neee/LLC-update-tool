@@ -23,6 +23,7 @@ pub struct Lock {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Default)]
 pub struct Setting {
     pub(crate) date: chrono::NaiveDateTime,
+    pub(crate) font: Option<Lock>,
     pub(crate) locks: Vec<Lock>,
 }
 
@@ -212,8 +213,15 @@ fn lock_test() {
         &PathBuf::from("./justfile"),
     )];
 
+    let font = Lock::new(
+        "test".to_string(),
+        &Url::parse("https://example.com").unwrap(),
+        &PathBuf::from("./justfile"),
+    );
+
     let setting = Setting {
         date: chrono::Local::now().naive_local(),
+        font: Some(font),
         locks,
     };
 

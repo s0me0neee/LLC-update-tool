@@ -9,7 +9,7 @@ use conf::Config;
 use inquire::InquireError;
 use llc::AssetWarper;
 use log::{error, info, warn};
-use std::{path::PathBuf, process::exit};
+use std::{path::PathBuf, process::exit, str::FromStr};
 
 use crate::setting::{Lock, Setting};
 
@@ -182,7 +182,10 @@ async fn main() {
     );
 
     let repository_url = get_repository_url();
-    let font_url = get_font_url();
+    let font_url = url::Url::from_str(&get_font_url()).unwrap_or_else(|e| {
+        error!("Invalid font URL: {}", e);
+        panic!();
+    });
     info!("Fetching releases from {}", repository_url);
     println!("Fetching releases...");
     let selected_release = llc::select_release(&repository_url).await.unwrap();
@@ -301,13 +304,36 @@ async fn main() {
         dbg!(&languages);
     }
 
+    let font_path = &paths.app_cache_dir.join("Font/");
+    if setting.font.is_some() {
+        let msg = "Font asset is cached, install?";
+        if prompt_confirm(msg, true, "Install font confirmation") {
+        } else {
+            println!("Download font from: {}", font_url);
+            llc::download_asset(font_url.clone(), font_path)
+                .await
+                .expect("Downlaod failed");
+
+            let font_lock = Some(Lock::new("Font".to_string(), &font_url, font_path));
+            setting.font = font_lock;
+        }
+    }
+
     println!("Extracting asset...");
     info!(
         "Extracting {} into {}",
         download_file_path.display(),
         paths.lbc_lang_dir.display()
     );
+
     llc::extract_asset(&download_file_path, &paths.lbc_lang_dir)
+        .await
+        .unwrap_or_else(|e| {
+            error!("Failed to extract asset: {}", e);
+            panic!();
+        });
+
+    llc::extract_asset(font_path, &paths.lbc_lang_dir.join("LLC zh-CN/"))
         .await
         .unwrap_or_else(|e| {
             error!("Failed to extract asset: {}", e);
