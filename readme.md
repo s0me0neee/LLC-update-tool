@@ -94,6 +94,14 @@ Common issues and useful commands:
   - When `TEST=1` (or on GitHub Actions), the game data directory is set to `./test/LimbusCompany_Data` (see `src/main.rs`).
   - For production usage, remove/disable these overrides so OS/Steam discovery paths are used.
   - You can create the expected local test directories via `make prepare-test-dirs` or `just prepare_test_dirs`.
+- Logs:
+  - Use `RUST_LOG` to set log level, log level is default to `warn`
+    - Options are:
+      - `error`
+      - `warn`
+      - `info`
+      - `debug`
+      - `trace`
 
 Tests:
 
@@ -124,7 +132,7 @@ Maintainers / contributors:
 
 ## Roadmap
 
-- Font installation support
+- Add some cli flags features
 - Multiple-language + version tracking (per language)
 - Automatic extraction target (no hard-coded folder assumptions)
 - Support for other Git sources (not only GitHub)
@@ -138,7 +146,6 @@ This project is licensed under the MIT License. See [LICENSE](./LICENSE).
 
 Inspiration, templates, etc.:
 
-- [awesome-readme](https://github.com/matiassingers/awesome-readme)
 - [Localize Limbus Company](https://github.com/LocalizeLimbusCompany/LocalizeLimbusCompany/tree/main/LLC_zh-CN)
 - [LLC Mod Toolbox](https://github.com/LocalizeLimbusCompany/LLC_MOD_Toolbox)
 - [LLC Chinese font](https://raw.githubusercontent.com/LocalizeLimbusCompany/LocalizeLimbusCompany/refs/heads/main/Fonts/LLCCN-Font.7z)
