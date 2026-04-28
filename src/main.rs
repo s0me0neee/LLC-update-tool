@@ -53,7 +53,7 @@ fn init() {
         println!("Mac(wine) support is currently in development.");
     }
     env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Warn)
         .parse_default_env()
         .init();
     info!("logger initialized");
