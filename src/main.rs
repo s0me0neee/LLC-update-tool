@@ -395,6 +395,7 @@ fn get_lang_dir() -> PathBuf {
             unreachable!("This branch is handled by the cfg!(not(windows)) above")
         }
     }
+    .join("Lang/")
 }
 
 #[tokio::main]
@@ -404,12 +405,13 @@ async fn main() {
     if args.list {
         let lang_dir = get_lang_dir();
         let langs = lang::get_languages(&lang_dir);
-        let current_lang = lang::get_current_lang(&lang_dir);
-        println!(
-            "Current language: {}, at: {}",
-            current_lang.name,
-            current_lang.language_dir_path.display()
-        );
+        if let Some(l) = lang::get_current_lang(&lang_dir) {
+            println!(
+                "Current language: {}, at: {}",
+                l.name,
+                l.language_dir_path.display()
+            );
+        };
         println!("Available languages:");
         for l in langs {
             println!("- {} ({})", l.name, l.language_dir_path.display());

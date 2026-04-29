@@ -27,21 +27,24 @@ fn get_lang_path(lbc_data_dir_path: &Path) -> PathBuf {
     language_dir
 }
 
-pub fn get_current_lang(language_dir_path: &Path) -> Language {
+pub fn get_current_lang(language_dir_path: &Path) -> Option<Language> {
     let config_file_path = language_dir_path.join("config.json");
     info!(
         "Reading current language configuration from {}",
         config_file_path.display()
     );
 
-    let config_content = std::fs::read_to_string(&config_file_path).unwrap_or_else(|err| {
-        error!(
-            "Failed to read language config {}: {}",
-            config_file_path.display(),
-            err
-        );
-        panic!();
-    });
+    let config_content = match std::fs::read_to_string(&config_file_path) {
+        Ok(content) => content,
+        Err(err) => {
+            error!(
+                "Failed to read language config {}: {}",
+                config_file_path.display(),
+                err
+            );
+            return None;
+        }
+    };
 
     let lang_config: LangConfig = match serde_json::from_str(&config_content) {
         Ok(config) => config,
@@ -57,10 +60,10 @@ pub fn get_current_lang(language_dir_path: &Path) -> Language {
     let lang_name = &lang_config.lang;
 
     info!("Current language from config: {}", lang_name);
-    Language {
+    Some(Language {
         name: lang_name.clone(),
         language_dir_path: language_dir_path.join(lang_name),
-    }
+    })
 }
 
 pub fn get_languages(language_dir_path: &Path) -> Vec<Language> {

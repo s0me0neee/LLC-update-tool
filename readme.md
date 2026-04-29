@@ -112,7 +112,8 @@ Notes:
 
 ## Roadmap
 
-- Add more cli flags features
+- Add more
+- cli flags features
 - Multiple-language + version tracking (per language)
 - Automatic extraction target (no hard-coded folder assumptions)
 - Support for other Git sources (not only GitHub)
