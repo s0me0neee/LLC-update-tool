@@ -1,3 +1,4 @@
+mod cli;
 mod conf;
 mod fs;
 mod lang;
@@ -5,6 +6,7 @@ mod llc;
 mod path;
 mod setting;
 mod steam;
+use clap::Parser;
 use conf::Config;
 use inquire::InquireError;
 use llc::AssetWarper;
@@ -374,9 +376,47 @@ async fn maybe_install_font(
     Ok(())
 }
 
+fn get_lang_dir() -> PathBuf {
+    if crate::path::is_test_mode() {
+        PathBuf::from("./test/LimbusCompany_Data")
+    } else if cfg!(not(windows)) {
+        crate::steam::get_lbc_data_dir_vdf()
+    } else {
+        #[cfg(windows)]
+        {
+            crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|| {
+                error!("Could not find LBC data directory in Registry.");
+                eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
+                std::process::exit(1);
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            unreachable!("This branch is handled by the cfg!(not(windows)) above")
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     init();
+    let args = cli::Args::parse();
+    if args.list {
+        let lang_dir = get_lang_dir();
+        let langs = lang::get_languages(&lang_dir);
+        let current_lang = lang::get_current_lang(&lang_dir);
+        println!(
+            "Current language: {}, at: {}",
+            current_lang.name,
+            current_lang.language_dir_path.display()
+        );
+        println!("Available languages:");
+        for l in langs {
+            println!("- {} ({})", l.name, l.language_dir_path.display());
+        }
+        exit(0);
+    }
+
     let mut setting = setting::setting_init();
     info!(
         "Loaded settings with {} cached lock record(s)",
@@ -400,25 +440,7 @@ async fn main() {
     let paths = {
         let archive_file_path = PathBuf::from(&selected_asset.name);
 
-        let lbc_data_dir = if crate::path::is_test_mode() {
-            PathBuf::from("./test/LimbusCompany_Data")
-        } else if cfg!(not(windows)) {
-            crate::steam::get_lbc_data_dir_vdf()
-        } else {
-            #[cfg(windows)]
-            {
-                crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|| {
-                    error!("Could not find LBC data directory in Registry.");
-                    eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
-                    std::process::exit(1);
-                })
-            }
-            #[cfg(not(windows))]
-            {
-                unreachable!("This branch is handled by the cfg!(not(windows)) above")
-            }
-        };
-
+        let lbc_data_dir = get_lang_dir();
         Paths::new(archive_file_path, lbc_data_dir)
     };
 
