@@ -31,7 +31,7 @@ This project automates the common workflow of updating language/localization fil
 - Clone the repository:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/s0me0neee/LLC-update-tool
 cd LLC-update-tool
 ```
 
@@ -40,8 +40,7 @@ cd LLC-update-tool
 ```bash
 cargo build
 ```
-
-- Optional: install as a local binary:
+- Install:
 
 ```bash
 cargo install --path .
