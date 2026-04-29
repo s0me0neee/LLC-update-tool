@@ -1,10 +1,17 @@
 [package]
-name = "llc"
+name = "llc-updater"
 version = "0.1.1"
 edition = "2024"
 authors = ["s0me0neee"]
 repository = "https://github.com/s0me0neee/LLC-update-tool"
-description = "A CLI tool to update Limbus Company data files."
+description = "A CLI tool to update and install Limbus Company zh-CN translations."
+license = "MIT"
+readme = "README.md"
+keywords = ["cli"]
+
+[[bin]]
+name = "llc"
+path = "src/main.rs"
 
 [package.metadata.wix]
 upgrade-guid = "144F7910-213E-4613-B213-B37CF62353E8"
