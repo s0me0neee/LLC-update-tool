@@ -1,6 +1,6 @@
 # LLC Update Tool (Limbus Company)
 
-CLI tool to download a GitHub release asset (for example from [LocalizeLimbusCompany](https://github.com/LocalizeLimbusCompany/LocalizeLimbusCompany)) and install the extracted `Lang/` content into the Limbus Company game directory.
+CLI tool to download a GitHub release language asset (for example from [LocalizeLimbusCompany](https://github.com/LocalizeLimbusCompany/LocalizeLimbusCompany)) and install the content into the Limbus Company game directory.
 
 ## Warning
 
@@ -9,16 +9,18 @@ Font installation is optional but recommended for some languages. If the game sh
 
 ## Description
 
-This project automates the common workflow of updating language/localization files for Limbus Company. It fetches releases from a GitHub repository, lets you pick a release and asset, downloads the archive with progress reporting, extracts it, and installs the extracted language content into the game’s `LimbusCompany_Data/Lang` folder. It also stores a small lock/config file (`lock.json`) that records what was downloaded and its checksum so future runs can skip redundant downloads.
+This project automates the common workflow of updating language/localization files for Limbus Company. It fetches releases from a GitHub repository, lets you pick a release and asset, downloads the archive with progress reporting, extracts it, and installs the extracted language content into the game’s `LimbusCompany_Data/Lang` folder. It also has a lock/config file (`lock.json`) that records what was downloaded and its checksum so future runs can skip redundant downloads.
 
 ## Getting Started
 
 ### Dependencies
 
+- OS: Windows / Linux (supported), macOS (limited support)
+
+#### Development dependencies
+
 - Rust toolchain (edition 2024)
-- Network access to GitHub (GitHub API is rate-limited if unauthenticated)
-- OS: Linux / Windows (supported), macOS (limited)
-- Optional: `make` and/or `just` (helpers included)
+- Optional: `make` and/or `just` (for development)
 
 ### OS Support
 
@@ -28,21 +30,21 @@ This project automates the common workflow of updating language/localization fil
 
 ### Installing
 
-- Clone the repository:
+- Install with Cargo:
+
+```bash
+cargo install llc-updater
+```
+
+- Install from binaries
+  The [release page](https://github.com/s0me0neee/LLC-update-tool/releases) includes precompiled binaries for Linux, macOS and Windows.
+
+- Install from source:
 
 ```bash
 git clone https://github.com/s0me0neee/LLC-update-tool
 cd LLC-update-tool
-```
-
-- Build:
-
-```bash
 cargo build
-```
-- Install:
-
-```bash
 cargo install --path .
 ```
 
@@ -52,13 +54,13 @@ Notes:
 
 ### Executing program
 
-- Run with Cargo:
+- Run
 
-```bash
-cargo run
+```
+llc
 ```
 
-- Or using helpers:
+- Or using Just or Make:
 
 ```bash
 make run
@@ -71,14 +73,8 @@ just run
 - Enable more logging:
 
 ```bash
-RUST_LOG=info cargo run
+RUST_LOG=info llc
 ```
-
-The program will prompt you for:
-
-- GitHub repository URL
-- Release selection
-- Asset selection
 
 ## Help
 
@@ -91,8 +87,7 @@ Common issues and useful commands:
 - Test overrides (important):
   - When `TEST=1` (or on GitHub Actions), app data is overridden to `./test/llc` (see `src/path.rs`).
   - When `TEST=1` (or on GitHub Actions), the game data directory is set to `./test/LimbusCompany_Data` (see `src/main.rs`).
-  - For production usage, remove/disable these overrides so OS/Steam discovery paths are used.
-  - You can create the expected local test directories via `make prepare-test-dirs` or `just prepare_test_dirs`.
+  - You can create the expected local test directories via targets `make prepare-test-dirs` or `just prepare_test_dirs`.
 - Logs:
   - Use `RUST_LOG` to set log level, log level is default to `warn`
     - Options are:
@@ -102,27 +97,9 @@ Common issues and useful commands:
       - `debug`
       - `trace`
 
-Tests:
-
-```bash
-cargo test
-```
-
-Integration tests:
-
-```bash
-TEST=1 cargo test
-```
-
 Notes:
 
 - Test mode is enabled when `TEST` is truthy (`1/true/yes/...`) or when running on GitHub Actions (`GITHUB_ACTIONS` is set).
-
-## Authors
-
-Maintainers / contributors:
-
-- See repository commit history.
 
 ## Version History
 
