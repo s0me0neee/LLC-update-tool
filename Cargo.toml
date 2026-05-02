@@ -1,6 +1,6 @@
 [package]
 name = "llc-updater"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 authors = ["s0me0neee"]
 repository = "https://github.com/s0me0neee/LLC-update-tool"
