@@ -376,14 +376,15 @@ async fn maybe_install_font(
     Ok(())
 }
 
-fn get_lang_dir() -> PathBuf {
-    if crate::path::is_test_mode() {
+fn get_lbc_data_dir() -> PathBuf {
+    let p = if crate::path::is_test_mode() {
         PathBuf::from("./test/LimbusCompany_Data")
     } else if cfg!(not(windows)) {
         crate::steam::get_lbc_data_dir_vdf()
     } else {
         #[cfg(windows)]
         {
+            info!("Using Windows directory");
             crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|| {
                 error!("Could not find LBC data directory in Registry.");
                 eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
@@ -394,8 +395,8 @@ fn get_lang_dir() -> PathBuf {
         {
             unreachable!("This branch is handled by the cfg!(not(windows)) above")
         }
-    }
-    .join("Lang/")
+    };
+    p
 }
 
 #[tokio::main]
@@ -403,7 +404,7 @@ async fn main() {
     init();
     let args = cli::Args::parse();
     if args.list {
-        let lang_dir = get_lang_dir();
+        let lang_dir = get_lbc_data_dir();
         let langs = lang::get_languages(&lang_dir);
         if let Some(l) = lang::get_current_lang(&lang_dir) {
             println!(
@@ -441,8 +442,8 @@ async fn main() {
 
     let paths = {
         let archive_file_path = PathBuf::from(&selected_asset.name);
-
-        let lbc_data_dir = get_lang_dir();
+        let lbc_data_dir = get_lbc_data_dir();
+        info!("Found data directory: {}", &lbc_data_dir.display());
         Paths::new(archive_file_path, lbc_data_dir)
     };
 
