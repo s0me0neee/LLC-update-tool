@@ -17,7 +17,7 @@ This project automates the common workflow of updating language/localization fil
 
 - OS: Windows / Linux (supported), macOS (limited support)
 
-#### Development dependencies
+#### Development Dependencies
 
 - Rust toolchain (edition 2024)
 - Optional: `make` and/or `just` (for development)
@@ -37,7 +37,7 @@ cargo install llc-updater
 ```
 
 - Install from binaries
-  The [release page](https://github.com/s0me0neee/LLC-update-tool/releases) includes precompiled binaries for Linux, macOS and Windows.
+  The [release page](https://github.com/s0me0neee/LLC-update-tool/releases) includes precompiled binaries for Linux, macOS, and Windows.
 
 - Install from source:
 
@@ -110,7 +110,7 @@ Notes:
 - 0.1.0
   - Initial release
 
-## Roadmap
+## Road Map
 
 - Add more
 - cli flags features
