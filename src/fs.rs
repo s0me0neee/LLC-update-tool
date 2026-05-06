@@ -76,4 +76,127 @@ pub fn install_and_clean(paths: &Paths) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-pub fn copy_to_lbc(_paths: &Paths) {}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn temp_lang_dir(suffix: &str) -> (PathBuf, PathBuf, Paths) {
+        let root = std::env::temp_dir().join(format!(
+            "llc-fs-test-{}-{}",
+            suffix,
+            std::process::id()
+        ));
+        let lbc_data_dir = root.join("LimbusCompany_Data");
+        let lang_dir = lbc_data_dir.join("Lang");
+        fs::create_dir_all(&lang_dir).unwrap();
+        let paths = crate::Paths::new(PathBuf::from("dummy"), lbc_data_dir);
+        (root, lang_dir, paths)
+    }
+
+    #[test]
+    fn install_and_clean_flattens_nested_structure() {
+        let (root, lang_dir, paths) = temp_lang_dir("nested");
+
+        let nested = lang_dir
+            .join("LimbusCompany_Data")
+            .join("Lang")
+            .join("LLC_zh-CN");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("test.json"), b"{}").unwrap();
+
+        install_and_clean(&paths).unwrap();
+
+        assert!(
+            lang_dir.join("LLC_zh-CN").join("test.json").exists(),
+            "lang file should be moved to flat location"
+        );
+        assert!(
+            !lang_dir.join("LimbusCompany_Data").exists(),
+            "redundant wrapper dir should be removed"
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn install_and_clean_noop_when_already_flat() {
+        let (root, lang_dir, paths) = temp_lang_dir("flat");
+
+        let lang_subdir = lang_dir.join("LLC_zh-CN");
+        fs::create_dir_all(&lang_subdir).unwrap();
+        fs::write(lang_subdir.join("test.json"), b"{}").unwrap();
+
+        install_and_clean(&paths).unwrap();
+
+        assert!(
+            lang_dir.join("LLC_zh-CN").join("test.json").exists(),
+            "existing flat files should be untouched"
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn install_and_clean_replaces_existing_lang_dir() {
+        let (root, lang_dir, paths) = temp_lang_dir("replace");
+
+        // Pre-existing flat language dir
+        let existing = lang_dir.join("LLC_zh-CN");
+        fs::create_dir_all(&existing).unwrap();
+        fs::write(existing.join("old.json"), b"old").unwrap();
+
+        // Nested structure (simulating fresh extraction) with updated content
+        let nested = lang_dir
+            .join("LimbusCompany_Data")
+            .join("Lang")
+            .join("LLC_zh-CN");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("new.json"), b"new").unwrap();
+
+        install_and_clean(&paths).unwrap();
+
+        let final_lang = lang_dir.join("LLC_zh-CN");
+        assert!(
+            final_lang.join("new.json").exists(),
+            "new file should be present after replacement"
+        );
+        assert!(
+            !final_lang.join("old.json").exists(),
+            "old file should be gone after replacement"
+        );
+        assert!(
+            !lang_dir.join("LimbusCompany_Data").exists(),
+            "redundant wrapper dir should be removed"
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn install_and_clean_handles_multiple_lang_dirs() {
+        let (root, lang_dir, paths) = temp_lang_dir("multi");
+
+        for lang in ["LLC_zh-CN", "LLC_zh-TW"] {
+            let nested = lang_dir
+                .join("LimbusCompany_Data")
+                .join("Lang")
+                .join(lang);
+            fs::create_dir_all(&nested).unwrap();
+            fs::write(nested.join("file.json"), b"{}").unwrap();
+        }
+
+        install_and_clean(&paths).unwrap();
+
+        for lang in ["LLC_zh-CN", "LLC_zh-TW"] {
+            assert!(
+                lang_dir.join(lang).join("file.json").exists(),
+                "{lang} file should be at flat location"
+            );
+        }
+        assert!(!lang_dir.join("LimbusCompany_Data").exists());
+
+        fs::remove_dir_all(root).ok();
+    }
+}
+

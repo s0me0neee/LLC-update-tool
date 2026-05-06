@@ -96,23 +96,18 @@ pub fn setting_init() -> Setting {
 
 fn handle_setting_init_error(err: ConfigError) -> Setting {
     match err {
-        ConfigError::NotFound(config_file_path) => {
-            create_default_setting_interactive(config_file_path)
+        ConfigError::NotFound(path) => create_default_setting_interactive(path),
+        ConfigError::NotAFile(path) => {
+            eprintln!("Error: Config path is a directory, not a file: {}", path.display());
+            exit(1);
         }
-        ConfigError::NotAFile(config_file_path) => {
-            error!(
-                "Config file path points to a directory, not a file: {}",
-                config_file_path.display()
-            );
-            panic!("filesystem conflict at config path");
+        ConfigError::JsonError(e) => {
+            eprintln!("Error: Config file contains invalid JSON: {}", e);
+            exit(1);
         }
-        ConfigError::JsonError(err) => {
-            error!("Config file is not valid JSON: {}", err);
-            panic!("invalid config json");
-        }
-        ConfigError::IoError(err) => {
-            error!("I/O error while reading config: {}", err);
-            panic!("config io error");
+        ConfigError::IoError(e) => {
+            eprintln!("Error: Could not read config file: {}", e);
+            exit(1);
         }
     }
 }
@@ -156,51 +151,40 @@ fn create_default_setting(config_file_path: PathBuf) -> Setting {
         config_file_path.display()
     );
 
-    let config_dir_path = config_file_path.parent().unwrap_or_else(|| {
-        error!(
-            "Cannot determine parent directory for config file path: {}",
+    let Some(config_dir_path) = config_file_path.parent() else {
+        eprintln!(
+            "Error: Cannot determine parent directory for config path: {}",
             config_file_path.display()
         );
-        panic!("invalid config path");
-    });
+        exit(1);
+    };
 
-    std::fs::create_dir_all(config_dir_path).unwrap_or_else(|err| {
-        error!(
-            "Failed to create config directory {}: {}",
+    if let Err(err) = std::fs::create_dir_all(config_dir_path) {
+        eprintln!(
+            "Error: Failed to create config directory {}: {}",
             config_dir_path.display(),
             err
         );
-        panic!();
-    });
+        exit(1);
+    }
 
     if let Err(write_err) = Setting::write(&default_setting) {
-        warn!(
-            "Initial write failed while creating default config: {}",
-            write_err
-        );
-
-        match write_err {
-            ConfigError::NotFound(missing_path) => {
-                std::fs::File::create(&missing_path).unwrap_or_else(|err| {
-                    error!(
-                        "Failed to create config file {}: {}",
-                        missing_path.display(),
-                        err
-                    );
-                    panic!();
-                });
-                Setting::write(&default_setting).unwrap_or_else(|err| {
-                    error!(
-                        "Failed to write default config after file creation: {}",
-                        err
-                    );
-                    panic!();
-                });
+        if let ConfigError::NotFound(ref missing_path) = write_err {
+            if let Err(err) = std::fs::File::create(missing_path) {
+                eprintln!(
+                    "Error: Failed to create config file {}: {}",
+                    missing_path.display(),
+                    err
+                );
+                exit(1);
             }
-            other => {
-                error!("Failed to create default config: {}", other);
-                panic!();
+            if let Err(err) = Setting::write(&default_setting) {
+                eprintln!("Error: Failed to write default config: {}", err);
+                exit(1);
             }
+        } else {
+            eprintln!("Error: Failed to create default config: {}", write_err);
+            exit(1);
         }
     }
 
@@ -244,7 +228,7 @@ fn lock_test() {
         locks,
     };
 
-    let _ = Setting::write(&setting).expect("Failed to write lock");
+    Setting::write(&setting).expect("Failed to write lock");
     let ctx = Setting::read().expect("Failed to read lock");
 
     assert_eq!(setting, ctx);

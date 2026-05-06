@@ -9,8 +9,8 @@ mod steam;
 use clap::Parser;
 use conf::Config;
 use inquire::InquireError;
-use llc::AssetWarper;
-use log::{error, info, warn};
+use llc::AssetWrapper;
+use log::{info, warn};
 use std::{path::PathBuf, process::exit, str::FromStr};
 
 use crate::setting::{Lock, Setting};
@@ -29,7 +29,6 @@ macro_rules! env_dbg_init {
 #[derive(Debug)]
 struct Paths {
     archive_file_path: PathBuf,
-    app_data_dir: PathBuf,
     app_cache_dir: PathBuf,
     lbc_data_dir: PathBuf,
     lbc_lang_dir: PathBuf,
@@ -37,12 +36,10 @@ struct Paths {
 
 impl Paths {
     fn new(archive_file_path: PathBuf, lbc_data_dir: PathBuf) -> Self {
-        let app_data_dir = path::get_appdata_path();
-        let app_cache_dir = app_data_dir.join("cache");
+        let app_cache_dir = path::get_appdata_path().join("cache");
         let lbc_lang_dir = lbc_data_dir.join("Lang");
         Self {
             archive_file_path,
-            app_data_dir,
             app_cache_dir,
             lbc_data_dir,
             lbc_lang_dir,
@@ -60,12 +57,13 @@ fn init() {
         .init();
     info!("logger initialized");
 
-    rustls::crypto::ring::default_provider()
+    if rustls::crypto::ring::default_provider()
         .install_default()
-        .unwrap_or_else(|_| {
-            error!("Failed to install rustls crypto provider");
-            panic!();
-        });
+        .is_err()
+    {
+        eprintln!("Error: Failed to install rustls crypto provider");
+        exit(1);
+    }
 }
 
 fn handle_prompt_error(context: &str, err: InquireError) -> ! {
@@ -95,7 +93,7 @@ fn prompt_confirm(message: &str, default: bool, context: &str) -> bool {
     }
 }
 
-fn select_asset(asset_options: Vec<AssetWarper>) -> AssetWarper {
+fn select_asset(asset_options: Vec<AssetWrapper>) -> AssetWrapper {
     match inquire::Select::new("Select a release asset to download:", asset_options).prompt() {
         Ok(asset) => asset,
         Err(err) => handle_prompt_error("Asset selection", err),
@@ -103,75 +101,67 @@ fn select_asset(asset_options: Vec<AssetWarper>) -> AssetWarper {
 }
 
 fn create_all_dirs(paths: &Paths) -> Result<(), std::io::Error> {
-    info!(
-        "Ensuring cache directory exists: {}",
-        paths.app_cache_dir.display()
-    );
     std::fs::create_dir_all(&paths.app_cache_dir)?;
-    if !paths.lbc_data_dir.exists() {
-        let create_data_dir_confirmation =
-            inquire::Confirm::new("Limbus Company data directory was not found. Create it now?")
-                .with_default(false)
-                .prompt();
-        return match create_data_dir_confirmation {
-            Ok(true) => {
-                std::fs::create_dir_all(&paths.lbc_lang_dir)?;
-                info!(
-                    "Created game language directory: {}",
-                    &paths.lbc_lang_dir.display()
-                );
-                Ok(())
-            }
-            Ok(false) => Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "Required game data directory was not found: {}",
-                    paths.lbc_data_dir.display()
-                ),
-            )),
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Interrupted,
-                format!("Data directory creation prompt interrupted: {}", e),
-            )),
-        };
+    if paths.lbc_data_dir.exists() {
+        info!(
+            "Using existing game data directory: {}",
+            paths.lbc_data_dir.display()
+        );
+        return Ok(());
     }
-    info!(
-        "Using existing game data directory: {}",
-        paths.lbc_data_dir.display()
-    );
-    Ok(())
+    match inquire::Confirm::new("Limbus Company data directory was not found. Create it now?")
+        .with_default(false)
+        .prompt()
+    {
+        Ok(true) => {
+            std::fs::create_dir_all(&paths.lbc_lang_dir)?;
+            info!(
+                "Created game language directory: {}",
+                paths.lbc_lang_dir.display()
+            );
+            Ok(())
+        }
+        Ok(false) => Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "Required game data directory was not found: {}",
+                paths.lbc_data_dir.display()
+            ),
+        )),
+        Err(e) => Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            format!("Data directory creation prompt interrupted: {}", e),
+        )),
+    }
+}
+
+fn prompt_url(message: &str, default: &str, help: &str, context: &str) -> String {
+    match inquire::Text::new(message)
+        .with_default(default)
+        .with_help_message(help)
+        .prompt()
+    {
+        Ok(val) => val,
+        Err(err) => handle_prompt_error(context, err),
+    }
 }
 
 fn get_repository_url() -> String {
-    let default_url = "https://github.com/LocalizeLimbusCompany/LocalizeLimbusCompany";
-
-    let prompt_message = "GitHub repository URL to fetch releases from:";
-
-    let input_result = inquire::Text::new(prompt_message)
-        .with_default(default_url)
-        .with_help_message("Press Enter to use the default LocalizeLimbusCompany repository")
-        .prompt();
-
-    match input_result {
-        Ok(val) => val,
-        Err(err) => handle_prompt_error("Repository URL input", err),
-    }
+    prompt_url(
+        "GitHub repository URL to fetch releases from:",
+        "https://github.com/LocalizeLimbusCompany/LocalizeLimbusCompany",
+        "Press Enter to use the default LocalizeLimbusCompany repository",
+        "Repository URL input",
+    )
 }
 
 fn get_font_url() -> String {
-    let default_url = "https://raw.githubusercontent.com/LocalizeLimbusCompany/LocalizeLimbusCompany/refs/heads/main/Fonts/LLCCN-Font.7z";
-
-    let prompt_message = "Font asset URL:";
-
-    let input_result = inquire::Text::new(prompt_message)
-        .with_default(default_url)
-        .with_help_message("Press Enter to use the source")
-        .prompt();
-
-    match input_result {
-        Ok(val) => val,
-        Err(err) => handle_prompt_error("Download URL input", err),
-    }
+    prompt_url(
+        "Font asset URL:",
+        "https://raw.githubusercontent.com/LocalizeLimbusCompany/LocalizeLimbusCompany/refs/heads/main/Fonts/LLCCN-Font.7z",
+        "Press Enter to use the source",
+        "Download URL input",
+    )
 }
 
 fn get_font_archive_file_path(paths: &Paths, font_url: &url::Url) -> PathBuf {
@@ -180,7 +170,6 @@ fn get_font_archive_file_path(paths: &Paths, font_url: &url::Url) -> PathBuf {
         .and_then(|mut segments| segments.next_back())
         .filter(|s| !s.is_empty())
         .unwrap_or("LLCCN-Font.7z");
-
     paths.app_cache_dir.join(file_name)
 }
 
@@ -216,22 +205,16 @@ fn find_extracted_lang_root_dir_path(font_extract_dir_path: &std::path::Path) ->
     None
 }
 
-fn copy_dir_recursive(
-    source_dir_path: &std::path::Path,
-    target_dir_path: &std::path::Path,
-) -> std::io::Result<()> {
-    std::fs::create_dir_all(target_dir_path)?;
-    for entry in std::fs::read_dir(source_dir_path)? {
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
         let entry = entry?;
-        let source_path = entry.path();
-        let target_path = target_dir_path.join(entry.file_name());
-        if source_path.is_dir() {
-            copy_dir_recursive(&source_path, &target_path)?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            if let Some(parent) = target_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::copy(&source_path, &target_path)?;
+            std::fs::copy(&src_path, &dst_path)?;
         }
     }
     Ok(())
@@ -252,18 +235,20 @@ async fn maybe_install_font(
     }
 
     let font_archive_file_path = get_font_archive_file_path(paths, font_url);
-    let mut should_download_font = !font_archive_file_path.exists();
-
-    if let Some(font_lock) = setting.font.as_mut()
-        && font_archive_file_path.exists()
-    {
-        let _ = font_lock.refresh_checksum();
-        should_download_font = !prompt_confirm(
+    let should_download_font = if font_archive_file_path.exists() {
+        if let Some(font_lock) = setting.font.as_mut()
+            && let Err(e) = font_lock.refresh_checksum()
+        {
+            warn!("Failed to hash cached font: {}", e);
+        }
+        !prompt_confirm(
             "Font archive is cached. Skip download?",
             true,
             "Skip font download confirmation",
-        );
-    }
+        )
+    } else {
+        true
+    };
 
     if should_download_font {
         println!("Downloading font from: {}", font_url);
@@ -288,14 +273,14 @@ async fn maybe_install_font(
         font_url,
         &font_archive_file_path,
     );
-    let _ = font_lock.refresh_checksum();
+    if let Err(e) = font_lock.refresh_checksum() {
+        warn!("Failed to compute font checksum: {}", e);
+    }
     setting.font = Some(font_lock);
     Setting::write(setting)?;
 
     let font_extract_dir_path = paths.app_cache_dir.join("font_extract");
-    if font_extract_dir_path.exists() {
-        std::fs::remove_dir_all(&font_extract_dir_path)?;
-    }
+    std::fs::remove_dir_all(&font_extract_dir_path).ok();
     std::fs::create_dir_all(&font_extract_dir_path)?;
 
     info!(
@@ -368,7 +353,9 @@ async fn maybe_install_font(
         return Err("No font directory was found inside the extracted font archive".into());
     }
 
-    let _ = std::fs::remove_dir_all(&font_extract_dir_path);
+    if let Err(e) = std::fs::remove_dir_all(&font_extract_dir_path) {
+        warn!("Failed to clean up font extract directory: {}", e);
+    }
     info!(
         "Font installation completed for {} language folder(s)",
         installed_font_count
@@ -376,35 +363,75 @@ async fn maybe_install_font(
     Ok(())
 }
 
-fn get_lbc_data_dir() -> PathBuf {
-    let p = if crate::path::is_test_mode() {
-        PathBuf::from("./test/LimbusCompany_Data")
-    } else if cfg!(not(windows)) {
-        crate::steam::get_lbc_data_dir_vdf()
-    } else {
-        #[cfg(windows)]
-        {
-            info!("Using Windows directory");
-            crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|| {
-                error!("Could not find LBC data directory in Registry.");
-                eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
-                std::process::exit(1);
-            })
-        }
-        #[cfg(not(windows))]
-        {
-            unreachable!("This branch is handled by the cfg!(not(windows)) above")
-        }
+fn should_skip_download(
+    setting: &mut Setting,
+    asset_name: &str,
+    asset_digest: Option<&str>,
+    download_file_path: &std::path::Path,
+) -> bool {
+    let Some(lock) = setting.locks.iter_mut().find(|l| l.name == asset_name) else {
+        return false;
     };
-    p
+    if !download_file_path.exists() {
+        return false;
+    }
+    if let Err(e) = lock.refresh_checksum() {
+        warn!("Failed to hash cached asset: {}", e);
+        return false;
+    }
+    let Some(expected_digest) = asset_digest else {
+        warn!("Selected release asset has no digest; checksum verification skipped");
+        return false;
+    };
+    let expected_checksum = expected_digest
+        .strip_prefix("sha256:")
+        .unwrap_or(expected_digest);
+    if lock.checksum == expected_checksum {
+        info!("Local checksum matches release digest for {}", lock.name);
+        prompt_confirm(
+            "Asset checksum verified. Skip download?",
+            true,
+            "Skip download confirmation",
+        )
+    } else {
+        warn!(
+            "Checksum mismatch! Local: {}, Expected: {}",
+            lock.checksum, expected_checksum
+        );
+        !prompt_confirm(
+            "Checksum differs from release. Redownload asset?",
+            true,
+            "Redownload confirmation",
+        )
+    }
+}
+
+fn get_lbc_data_dir() -> PathBuf {
+    if crate::path::is_test_mode() {
+        return PathBuf::from("./test/LimbusCompany_Data");
+    }
+    if cfg!(not(windows)) {
+        return crate::steam::get_lbc_data_dir_vdf();
+    }
+    #[cfg(windows)]
+    {
+        info!("Using Windows directory");
+        crate::steam::windows::get_lbc_data_dir_reg().unwrap_or_else(|| {
+            eprintln!("Error: Could not find Limbus Company data in the Windows Registry.");
+            exit(1);
+        })
+    }
+    #[cfg(not(windows))]
+    unreachable!()
 }
 
 #[tokio::main]
 async fn main() {
     init();
     let args = cli::Args::parse();
+
     if args.list {
-        let lang_dir = get_lbc_data_dir();
+        let lang_dir = get_lbc_data_dir().join("Lang");
         let langs = lang::get_languages(&lang_dir);
         if let Some(l) = lang::get_current_lang(&lang_dir) {
             println!(
@@ -428,127 +455,185 @@ async fn main() {
 
     let repository_url = get_repository_url();
     let font_url = url::Url::from_str(&get_font_url()).unwrap_or_else(|e| {
-        error!("Invalid font URL: {}", e);
-        panic!();
+        eprintln!("Error: Invalid font URL: {}", e);
+        exit(1);
     });
     info!("Fetching releases from {}", repository_url);
     println!("Fetching releases...");
-    let selected_release = llc::select_release(&repository_url).await.unwrap();
+    let selected_release = llc::select_release(&repository_url)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("Error: Failed to fetch releases: {}", e);
+            exit(1);
+        });
     let asset_list = llc::get_assets(selected_release);
-    let selected_asset = select_asset(asset_list).0;
-    let download_url = selected_asset.browser_download_url;
-    info!("Selected asset: {}", selected_asset.name);
-    println!("Selected asset: {}", selected_asset.name);
+    let asset = select_asset(asset_list).0;
+    let asset_name = asset.name;
+    let asset_digest = asset.digest;
+    let download_url = asset.browser_download_url;
+    info!("Selected asset: {}", asset_name);
+    println!("Selected asset: {}", asset_name);
 
-    let paths = {
-        let archive_file_path = PathBuf::from(&selected_asset.name);
-        let lbc_data_dir = get_lbc_data_dir();
-        info!("Found data directory: {}", &lbc_data_dir.display());
-        Paths::new(archive_file_path, lbc_data_dir)
-    };
+    let lbc_data_dir = get_lbc_data_dir();
+    info!("Found data directory: {}", lbc_data_dir.display());
+    let paths = Paths::new(PathBuf::from(&asset_name), lbc_data_dir);
 
     create_all_dirs(&paths).unwrap_or_else(|e| {
-        error!("Failed to create necessary directories: {}", e);
-        panic!();
+        eprintln!("Error: Failed to create necessary directories: {}", e);
+        exit(1);
     });
+
     let download_file_path = paths.app_cache_dir.join(&paths.archive_file_path);
-    let mut asset_lock = Lock::new(
-        selected_asset.name.clone(),
-        &download_url,
+    let mut asset_lock = Lock::new(asset_name.clone(), &download_url, &download_file_path);
+    let skip_download = should_skip_download(
+        &mut setting,
+        &asset_name,
+        asset_digest.as_deref(),
         &download_file_path,
     );
-    let mut skip_download = false;
-
-    if let Some(lock) = setting
-        .locks
-        .iter_mut()
-        .find(|l| l.name == selected_asset.name)
-        && download_file_path.exists()
-    {
-        let _ = lock.refresh_checksum();
-
-        if let Some(expected_digest) = &selected_asset.digest {
-            let expected_checksum = expected_digest
-                .strip_prefix("sha256:")
-                .unwrap_or(expected_digest);
-            if lock.checksum == expected_checksum {
-                info!("Local checksum matches release digest for {}", lock.name);
-                skip_download = prompt_confirm(
-                    "Asset checksum verified. Skip download?",
-                    true,
-                    "Skip download confirmation",
-                );
-            } else {
-                warn!(
-                    "Checksum mismatch! Local: {}, Expected: {}",
-                    lock.checksum, expected_checksum
-                );
-                let should_redownload = prompt_confirm(
-                    "Checksum differs from release. Redownload asset?",
-                    true,
-                    "Redownload confirmation",
-                );
-
-                skip_download = !should_redownload;
-            }
-        } else {
-            warn!("Selected release asset has no digest; checksum verification skipped");
-        }
-    }
 
     if !skip_download {
         println!("Downloading from: {}", download_url);
         info!("Downloading asset to {}", download_file_path.display());
         llc::download_asset(download_url, &download_file_path)
             .await
-            .expect("Download failed");
+            .unwrap_or_else(|e| {
+                eprintln!("Error: Download failed: {}", e);
+                exit(1);
+            });
 
         asset_lock.refresh_checksum().ok();
 
-        if let Some(lock) = setting
-            .locks
-            .iter_mut()
-            .find(|l| l.name == selected_asset.name)
-        {
+        if let Some(lock) = setting.locks.iter_mut().find(|l| l.name == asset_name) {
             *lock = asset_lock;
         } else {
             setting.locks.push(asset_lock);
         }
 
-        Setting::write(&setting).expect("Failed to save settings");
+        Setting::write(&setting).unwrap_or_else(|e| {
+            eprintln!("Error: Failed to save settings: {}", e);
+            exit(1);
+        });
         info!("Settings updated with latest lock info");
     } else {
-        info!("Skipping download for {}", selected_asset.name);
-        println!("Skipping download for {}", selected_asset.name);
+        info!("Skipping download for {}", asset_name);
+        println!("Skipping download for {}", asset_name);
     }
 
     println!("Extracting asset...");
-    info!(
-        "Extracting {} into {}",
-        download_file_path.display(),
-        paths.lbc_lang_dir.display()
-    );
-
     llc::extract_asset(&download_file_path, &paths.lbc_lang_dir)
         .await
         .unwrap_or_else(|e| {
-            error!("Failed to extract asset: {}", e);
-            panic!();
+            eprintln!("Error: Failed to extract asset: {}", e);
+            exit(1);
         });
 
     println!("Installing files...");
-    info!("Installing extracted files and cleaning temporary artifacts");
     fs::install_and_clean(&paths).unwrap_or_else(|e| {
-        error!("Error during move and cleanup: {}", e);
-        panic!();
+        eprintln!("Error: {}", e);
+        exit(1);
     });
 
     maybe_install_font(&mut setting, &paths, &font_url)
         .await
         .unwrap_or_else(|e| {
-            error!("Font installation failed: {}", e);
-            panic!();
+            eprintln!("Error: Font installation failed: {}", e);
+            exit(1);
         });
+}
+
+#[cfg(test)]
+mod find_lang_root_tests {
+    use super::*;
+
+    fn temp_dir(suffix: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "llc-main-test-{}-{}",
+            suffix,
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn finds_direct_nested_path() {
+        let root = temp_dir("direct-nested");
+        std::fs::create_dir_all(root.join("LimbusCompany_Data").join("Lang")).unwrap();
+
+        let result = find_extracted_lang_root_dir_path(&root).unwrap();
+        assert_eq!(result, root.join("LimbusCompany_Data").join("Lang"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn finds_direct_lang_path() {
+        let root = temp_dir("direct-lang");
+        std::fs::create_dir_all(root.join("Lang")).unwrap();
+
+        let result = find_extracted_lang_root_dir_path(&root).unwrap();
+        assert_eq!(result, root.join("Lang"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn finds_nested_path_under_subdirectory() {
+        let root = temp_dir("subdir-nested");
+        std::fs::create_dir_all(
+            root.join("LimbusLocalize_2026041901")
+                .join("LimbusCompany_Data")
+                .join("Lang"),
+        )
+        .unwrap();
+
+        let result = find_extracted_lang_root_dir_path(&root).unwrap();
+        assert_eq!(
+            result,
+            root.join("LimbusLocalize_2026041901")
+                .join("LimbusCompany_Data")
+                .join("Lang")
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn finds_lang_under_subdirectory() {
+        let root = temp_dir("subdir-lang");
+        std::fs::create_dir_all(root.join("some_release").join("Lang")).unwrap();
+
+        let result = find_extracted_lang_root_dir_path(&root).unwrap();
+        assert_eq!(result, root.join("some_release").join("Lang"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn returns_none_when_no_lang_dir() {
+        let root = temp_dir("none");
+        std::fs::create_dir_all(root.join("random_dir")).unwrap();
+
+        let result = find_extracted_lang_root_dir_path(&root);
+        assert!(result.is_none());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn prefers_direct_nested_over_lang_shortcut() {
+        // When both LimbusCompany_Data/Lang and Lang exist at top level,
+        // the direct nested path is checked first and wins.
+        let root = temp_dir("prefer-nested");
+        std::fs::create_dir_all(root.join("LimbusCompany_Data").join("Lang")).unwrap();
+        std::fs::create_dir_all(root.join("Lang")).unwrap();
+
+        let result = find_extracted_lang_root_dir_path(&root).unwrap();
+        assert_eq!(result, root.join("LimbusCompany_Data").join("Lang"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
 }
 
 #[test]

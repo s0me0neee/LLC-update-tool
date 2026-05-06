@@ -5,8 +5,8 @@ use std::path::Path;
 use url::Url;
 
 #[derive(Debug)]
-pub struct AssetWarper(pub(crate) octocrab::models::repos::Asset);
-impl std::fmt::Display for AssetWarper {
+pub struct AssetWrapper(pub(crate) octocrab::models::repos::Asset);
+impl std::fmt::Display for AssetWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.name)
     }
@@ -38,12 +38,12 @@ impl std::fmt::Display for ReleaseWrapper {
     }
 }
 
-pub fn get_assets(release: Release) -> Vec<AssetWarper> {
+pub fn get_assets(release: Release) -> Vec<AssetWrapper> {
     let release_tag = release.tag_name.clone();
     let wrapped_assets = release
         .assets
         .into_iter()
-        .map(AssetWarper)
+        .map(AssetWrapper)
         .collect::<Vec<_>>();
     info!("Selected release tag: {}", release_tag);
     info!(
@@ -63,13 +63,7 @@ pub async fn extract_asset(
         output_dir_path.display()
     );
 
-    if !output_dir_path.exists() {
-        info!(
-            "Output directory does not exist, creating {}",
-            output_dir_path.display()
-        );
-        std::fs::create_dir_all(output_dir_path)?;
-    }
+    std::fs::create_dir_all(output_dir_path)?;
 
     let archive_extension = archive_file_path.extension().and_then(|ext| ext.to_str());
     match archive_extension {
@@ -105,11 +99,8 @@ pub async fn extract_asset(
                 if zip_entry.is_dir() {
                     std::fs::create_dir_all(&output_path)?;
                 } else {
-                    let output_parent = output_path.parent();
-                    if let Some(parent_dir) = output_parent {
-                        if !parent_dir.exists() {
-                            std::fs::create_dir_all(parent_dir)?;
-                        }
+                    if let Some(parent_dir) = output_path.parent() {
+                        std::fs::create_dir_all(parent_dir)?;
                     }
                     let mut output_file = File::create(&output_path)?;
                     std::io::copy(&mut zip_entry, &mut output_file)?;
@@ -139,19 +130,15 @@ pub async fn download_asset(
     let client = reqwest::Client::new();
 
     let response = client
-        .get(download_url.clone())
+        .get(download_url.as_str())
         .header("User-Agent", "llc-updater")
         .send()
         .await?
         .error_for_status()?;
 
-    let content_size = match response.content_length() {
-        Some(size) => size,
-        None => {
-            error!("Failed to get content length from {}", download_url);
-            return Err("Missing content length header in response".into());
-        }
-    };
+    let content_size = response
+        .content_length()
+        .ok_or("Missing content length header in response")?;
 
     info!("Downloading to: {}", target_file_path.display());
 
@@ -181,27 +168,20 @@ pub async fn download_asset(
 }
 
 pub async fn get_releases(url: &str) -> Result<Vec<ReleaseWrapper>, Box<dyn std::error::Error>> {
-    let octo = octocrab::instance();
-    info!("Fetching releases from GitHub URL: {}", url);
+    let (owner, repo) = parse_github(url).ok_or("Invalid GitHub URL format")?;
+    info!("Fetching releases from {}/{}", owner, repo);
 
-    let (owner_name, repo_name) = parse_github(url).ok_or_else(|| {
-        error!("Failed to parse GitHub URL: {}", url);
-        "Invalid GitHub URL format"
-    })?;
-
-    let page = octo
-        .repos(owner_name.clone(), repo_name.clone())
+    let releases: Vec<ReleaseWrapper> = octocrab::instance()
+        .repos(&owner, &repo)
         .releases()
         .list()
         .per_page(5)
         .send()
-        .await?;
-
-    let releases = page
+        .await?
         .items
         .into_iter()
         .map(ReleaseWrapper)
-        .collect::<Vec<_>>();
+        .collect();
 
     if releases.is_empty() {
         return Err("No releases found for this repository.".into());
@@ -210,8 +190,8 @@ pub async fn get_releases(url: &str) -> Result<Vec<ReleaseWrapper>, Box<dyn std:
     info!(
         "Found {} release(s) for {}/{}. Newest tag: {}",
         releases.len(),
-        owner_name,
-        repo_name,
+        owner,
+        repo,
         releases[0].0.tag_name
     );
 

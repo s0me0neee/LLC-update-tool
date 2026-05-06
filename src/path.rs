@@ -1,4 +1,4 @@
-use super::*;
+use log::debug;
 use std::path::PathBuf;
 
 fn env_flag_is_true(name: &str) -> bool {
@@ -16,38 +16,29 @@ pub fn is_test_mode() -> bool {
 
 pub fn get_steam_path() -> PathBuf {
     if is_test_mode() {
-        let test_override_path = PathBuf::from("./test/Steam");
-        warn!(
-            "Using test override Steam path instead of resolved path: {}",
-            test_override_path.display()
-        );
-        return test_override_path;
+        return PathBuf::from("./test/Steam");
     }
 
     let Some(mut local_data_dir) = dirs::data_local_dir() else {
-        error!("Could not resolve local data directory for Steam path");
-        panic!();
+        eprintln!("Error: Could not resolve local data directory for Steam path");
+        std::process::exit(1);
     };
 
     local_data_dir.push("Steam");
-    info!("Resolved Steam path: {}", local_data_dir.display());
+    debug!("Resolved Steam path: {}", local_data_dir.display());
     local_data_dir
 }
 
 pub fn get_appdata_path() -> PathBuf {
+    if is_test_mode() {
+        return PathBuf::from("./test/llc");
+    }
+
     let Some(mut user_data_dir) = dirs::data_dir() else {
-        error!("Could not resolve user data directory for LLC config path");
-        panic!();
+        eprintln!("Error: Could not resolve user data directory for LLC config path");
+        std::process::exit(1);
     };
 
-    if is_test_mode() {
-        let test_override_path = PathBuf::from("./test/llc");
-        warn!(
-            "Using test override app data path instead of resolved path: {}",
-            test_override_path.display()
-        );
-        return test_override_path;
-    }
     user_data_dir.push("llc/");
     user_data_dir
 }

@@ -1,14 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use super::*;
+use log::{debug, info, warn};
 use keyvalues_parser::{Value, parse};
-use path::get_steam_path;
+use crate::path::get_steam_path;
 
 #[derive(Debug, Default)]
 struct Game {
-    id: String,
     name: String,
-    manifest_file_path: PathBuf,
     install_dir_path: String,
 }
 
@@ -29,25 +27,22 @@ pub mod windows {
         let apps_root = hkcu.open_subkey("Software\\Valve\\Steam\\Apps").ok()?;
 
         for entry in apps_root.enum_keys() {
-            let appid_str = entry.ok()?;
-            let appid: u32 = appid_str.parse().ok()?;
+            let Ok(appid_str) = entry else { continue };
+            let Ok(appid) = appid_str.parse::<u32>() else { continue };
 
             if !is_game_installed(appid) {
                 continue;
             }
 
-            let display_name = match get_game_name(appid) {
-                Some(name) => name,
-                None => continue,
+            let Some(display_name) = get_registry_value(appid, "DisplayName") else {
+                continue;
             };
-
             if !display_name.eq_ignore_ascii_case(GAME_NAME) {
                 continue;
             }
 
-            let install_dir_path = match get_game_path(appid) {
-                Some(path) => path,
-                None => continue,
+            let Some(install_dir_path) = get_registry_value(appid, "InstallLocation") else {
+                continue;
             };
 
             let game_install_dir = PathBuf::from(install_dir_path);
@@ -82,57 +77,26 @@ pub mod windows {
         false
     }
 
-    fn get_game_name(appid: u32) -> Option<String> {
+    fn get_registry_value(appid: u32, value_name: &str) -> Option<String> {
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
         let wow = format!(
             "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
             appid
         );
-
-        if let Ok(key) = hklm.open_subkey(&wow)
-            && let Ok(name) = key.get_value("DisplayName")
-        {
-            return Some(name);
+        if let Ok(key) = hklm.open_subkey(&wow) {
+            if let Ok(val) = key.get_value(value_name) {
+                return Some(val);
+            }
         }
         let plain = format!(
             "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
             appid
         );
-
-        if let Ok(key) = hklm.open_subkey(&plain)
-            && let Ok(name) = key.get_value("DisplayName")
-        {
-            return Some(name);
+        if let Ok(key) = hklm.open_subkey(&plain) {
+            if let Ok(val) = key.get_value(value_name) {
+                return Some(val);
+            }
         }
-
-        None
-    }
-
-    fn get_game_path(appid: u32) -> Option<String> {
-        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-
-        let wow = format!(
-            "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
-            appid
-        );
-
-        if let Ok(key) = hklm.open_subkey(&wow)
-            && let Ok(loc) = key.get_value("InstallLocation")
-        {
-            return Some(loc);
-        }
-
-        let plain = format!(
-            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App {}",
-            appid
-        );
-
-        if let Ok(key) = hklm.open_subkey(&plain)
-            && let Ok(loc) = key.get_value("InstallLocation")
-        {
-            return Some(loc);
-        }
-
         None
     }
 
@@ -150,24 +114,16 @@ pub mod windows {
 pub fn get_lbc_data_dir_vdf() -> PathBuf {
     const GAME_NAME: &str = "Limbus Company";
     info!("Looking for game: {}", GAME_NAME);
-    let installed_games = steam::get_games();
-    let target_game = installed_games
-        .iter()
-        .find(|e| e.name == GAME_NAME)
-        .ok_or_else(|| {
-            error!("{GAME_NAME} can't be found or not installed");
-            panic!();
-        })
-        .unwrap();
+    let installed_games = get_games();
+    let Some(target_game) = installed_games.iter().find(|e| e.name == GAME_NAME) else {
+        eprintln!("Error: {GAME_NAME} is not installed or could not be found.");
+        std::process::exit(1);
+    };
 
-    let lbc_data_dir_path =
-        PathBuf::from(target_game.install_dir_path.clone()).join("LimbusCompany_Data");
+    let lbc_data_dir_path = PathBuf::from(&target_game.install_dir_path).join("LimbusCompany_Data");
     if !lbc_data_dir_path.exists() {
-        error!(
-            "Game data directory does not exist at {}",
-            lbc_data_dir_path.display()
-        );
-        panic!();
+        eprintln!("Error: Game data directory not found at {}", lbc_data_dir_path.display());
+        std::process::exit(1);
     }
     info!("Using game data directory: {}", lbc_data_dir_path.display());
     lbc_data_dir_path
@@ -175,21 +131,18 @@ pub fn get_lbc_data_dir_vdf() -> PathBuf {
 
 fn get_games() -> Vec<Game> {
     let steam_path = get_steam_path();
-    info!("Using steam path: {}", steam_path.display());
+    debug!("Using steam path: {}", steam_path.display());
     let library_vdf_path = steam_path.join("steamapps/libraryfolders.vdf");
-    info!(
+    debug!(
         "Looking for libraryfolders.vdf at {}",
         library_vdf_path.display()
     );
     if !library_vdf_path.exists() {
-        error!(
-            "Could not find libraryfolders.vdf at {}",
-            library_vdf_path.display()
-        );
-        panic!();
+        eprintln!("Error: Could not find libraryfolders.vdf at {}", library_vdf_path.display());
+        std::process::exit(1);
     }
     let app_ids = parse_library_vdf(&library_vdf_path);
-    info!(
+    debug!(
         "Found {} app manifest id(s) in libraryfolders.vdf",
         app_ids.len()
     );
@@ -199,12 +152,12 @@ fn get_games() -> Vec<Game> {
         let manifest_path = steam_path
             .join("steamapps")
             .join(format!("appmanifest_{}.acf", app_id));
-        info!("Reading manifest: {}", manifest_path.display());
+        debug!("Reading manifest: {}", manifest_path.display());
 
         let manifest_content = match std::fs::read_to_string(&manifest_path) {
             Ok(content) => content,
             Err(err) => {
-                warn!(
+                debug!(
                     "Skipping app {}: could not read {}: {}",
                     app_id,
                     manifest_path.display(),
@@ -217,22 +170,19 @@ fn get_games() -> Vec<Game> {
         let game_meta = match get_game_info(&manifest_content) {
             Ok(meta) => meta,
             Err(err) => {
-                warn!("Skipping app {}: {}", app_id, err);
+                debug!("Skipping app {}: {}", app_id, err);
                 continue;
             }
         };
 
-        let mut game = Game::default();
-        game.id = app_id;
-        game.manifest_file_path = manifest_path;
-        game.name = game_meta.name;
-        game.install_dir_path = steam_path
-            .join("steamapps/common")
-            .join(game_meta.install_dir)
-            .to_string_lossy()
-            .to_string();
-
-        games.push(game);
+        games.push(Game {
+            name: game_meta.name,
+            install_dir_path: steam_path
+                .join("steamapps/common")
+                .join(game_meta.install_dir)
+                .to_string_lossy()
+                .to_string(),
+        });
     }
     info!(
         "Loaded {} install record(s) from app manifests",
@@ -276,17 +226,17 @@ fn get_game_info(manifest_content: &str) -> Result<GameMeta, String> {
 
 fn parse_library_vdf(vdf_file_path: &Path) -> Vec<String> {
     let contents = std::fs::read_to_string(vdf_file_path).unwrap_or_else(|e| {
-        error!("Error reading libraryfolders.vdf: {}", e);
-        panic!();
+        eprintln!("Error reading libraryfolders.vdf: {}", e);
+        std::process::exit(1);
     });
     let vdf = parse(&contents).unwrap_or_else(|e| {
-        error!("Failed to parse libraryfolders.vdf: {}", e);
-        panic!();
+        eprintln!("Failed to parse libraryfolders.vdf: {}", e);
+        std::process::exit(1);
     });
 
     if vdf.key != "libraryfolders" {
-        error!("Unexpected root key in libraryfolders.vdf: {}", vdf.key);
-        panic!();
+        eprintln!("Error: Unexpected root key in libraryfolders.vdf: {}", vdf.key);
+        std::process::exit(1);
     }
 
     let library_folders = vdf.value.unwrap_obj();
@@ -314,7 +264,7 @@ fn parse_library_vdf(vdf_file_path: &Path) -> Vec<String> {
             continue;
         };
 
-        info!(
+        debug!(
             "Discovered {} app id(s) in Steam library folder {}",
             apps_map.len(),
             folder_id
