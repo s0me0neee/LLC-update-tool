@@ -8,7 +8,7 @@ description = "A CLI tool to update and install Limbus Company zh-CN translation
 license = "MIT"
 readme = "README.md"
 keywords = ["cli"]
-exclude = ["CLAUDE.md", "test/"]
+exclude = ["test/"]
 
 [[bin]]
 name = "llc"
