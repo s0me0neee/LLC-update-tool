@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `llc-updater` is a CLI tool (`llc`) that automates downloading and installing Limbus Company zh-CN localization files from GitHub releases into the game's `LimbusCompany_Data/Lang/` directory. It fetches releases from GitHub via the Octocrab API, prompts for release/asset selection interactively (using `inquire`), downloads with progress bars, extracts `.zip`/`.7z` archives, and optionally installs font packages.
 
-The binary is named `llc`. The project uses Rust edition 2024 and requires the **nightly** toolchain (per CI).
+The project uses Rust edition 2024 and requires the **nightly** toolchain (per CI).
 
 ## Commands
 
 ```bash
-cargo build                      # build
-cargo test                       # run unit tests
+cargo build
+cargo test
 TEST=1 cargo test                # run integration tests (uses ./test/ overrides)
 cargo clippy --all-targets --all-features
 cargo fmt
@@ -50,7 +50,7 @@ RUST_LOG=debug llc
 
 1. `main` resolves `lbc_data_dir` (test override → VDF/registry) and builds a `Paths` struct.
 2. `llc::select_release` fetches up to 5 latest GitHub releases; user picks one interactively.
-3. `llc::download_asset` streams the file into `~/.local/share/llc/cache/` (or `./test/llc/cache/` in test mode).
+3. `llc::download_asset` streams the file into `~/.local/share/llc/cache/`.
 4. `llc::extract_asset` extracts `.zip` or `.7z` directly into `LimbusCompany_Data/Lang/`.
 5. `fs::install_and_clean` detects when the archive contained a redundant `LimbusCompany_Data/Lang/` prefix and flattens it in-place.
 6. `setting::Setting` (JSON at `~/.local/share/llc/lock.json`) records each downloaded asset's name, source URL, and SHA-256 checksum so future runs can skip redundant downloads.
